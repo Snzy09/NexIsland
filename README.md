@@ -37,7 +37,7 @@
 
 | Version | Release Date | Platform | Status | Highlights & Changes |
 | :---: | :---: | :---: | :---: | :--- |
-| **v0.5.5** | **Oct 2026** | **Windows, Android** | **Latest Stable** | • **Logic Chrome auto-minimize saat tab $\ge 3$**: Otomatis minimize ke slim capsule bar jika tab $\ge 3$; tetap standby jika $\le 2$ tab.<br/>• **Optimasi Performa & Memori**: Cache UI Automation untuk browser title, pembersihan loop polling, dan pengurangan CPU footprint.<br/>• **Integrasi Google Antigravity**: Kirim prompt langsung ke session aktif Antigravity dari PC atau HP via `/antigravity` & `/agy`.<br/>• **Spotify Lyrics**: Lirik tersinkronisasi realtime dengan timestamp musik.<br/>• **Notes & Working Alarms**: Tab catatan instan & alarm audio yang berfungsi penuh.<br/>• **Online MCP Library**: Hub & installer tool MCP daring. |
+| **v0.5.5** | **Oct 2026** | **Windows, Android** | **Latest Stable** | • **New Mascot App Logo**: Identitas visual maskot baru di seluruh icon desktop & installer.<br/>• **Pomodoro Focus Timer**: Mode timer fokus 25m & istirahat 5m dengan countdown ring, controls, dan navigasi carousel.<br/>• **Interactive TodoList**: Manajemen task dengan checklist penyelesaian realtime, counter kemajuan harian, dan persistensi otomatis.<br/>• **Logic Chrome auto-minimize saat tab $\ge 3$**: Otomatis minimize ke slim capsule bar jika tab $\ge 3$; tetap standby jika $\le 2$ tab.<br/>• **Optimasi Performa & Memori**: Cache UI Automation untuk browser title, pembersihan loop polling, dan pengurangan CPU footprint.<br/>• **Integrasi Google Antigravity**: Kirim prompt langsung ke session aktif Antigravity dari PC atau HP via `/antigravity` & `/agy`.<br/>• **Spotify Lyrics**: Lirik tersinkronisasi realtime dengan timestamp musik.<br/>• **Online MCP Library**: Hub & installer tool MCP daring. |
 | **v0.5.0** | Oct 2026 | Windows | Stable | Penambahan Dynamic Island format Vivo Y28, Spotify widget, Phone Link v2, charging status banner. |
 | **v0.4.0** | Sep 2026 | macOS, Windows | Legacy | Integrasi Flow Dictation, Parakeet speech-to-text offline, audio call recorder. |
 | **v0.2.0** | Aug 2026 | Android, Windows | Legacy | Inisiasi Phone Link TLS server dan aplikasi Android pendamping. |
@@ -105,18 +105,28 @@ flowchart LR
 - Album art cover, judul lagu, musisi, progress bar interaktif, kontrol playback (Play, Pause, Next, Prev, Shuffle, Loop).
 - **Sinkronisasi Lirik (LRC)**: Tampilkan lirik musik yang otomatis berjalan mengikuti detik lagu.
 
-### 5. 📝 Notes & Working Alarm System
+### 5. ⏱️ Pomodoro Focus Timer
+- Mode fokus produktivitas dengan timer 25 menit (Focus Time) dan istirahat 5 menit (Short Break).
+- Glowing red circular ring badge dengan digital countdown besar, tombol play/pause cepat, dan reset.
+- Live system date & time (`Mon 19 Oct 2026 09:55`) serta transisi mulus ke TodoList.
+
+### 6. ✅ Interactive TodoList Card
+- Monitor kemajuan tugas harian secara langsung dengan tracker `Task Done Today` (misal 4/5 tugas selesai).
+- Tambahkan tugas baru via input interaktif cepat `+ Add Task` dan bersihkan tugas selesai dengan `✎ Clear Done`.
+- Checklist pill interaktif dengan animasi strikethrough dan auto-save ke `localStorage`.
+
+### 7. 📝 Notes & Working Alarm System
 - **Notes Tab**: Simpan catatan cepat, checklist to-do, dan snippet tanpa perlu membuka aplikasi teks terpisah.
 - **Alarm Bekerja**: Pasang alarm waktu nyata dengan audio alert yang berbunyi tepat waktu saat sesi coding Anda selesai.
 
-### 6. 📱 Phone Link (Koneksi Ponsel Android nirkabel)
+### 8. 📱 Phone Link (Koneksi Ponsel Android nirkabel)
 - Hubungkan HP Android ke PC via jaringan lokal (Wi-Fi) dengan enkripsi TLS mandiri.
 - Notifikasi alert AI coding, persetujuan tool (approval), chat ke LLM, dan trigger prompt ke Antigravity langsung dari ranjang atau saat jauh dari meja kerja.
 
-### 7. 🔋 Real-Time Battery & Charging Status
+### 9. 🔋 Real-Time Battery & Charging Status
 - Visualisasi status baterai laptop secara estetis dengan indikator ring melingkar hijau dan persentase numerik saat perangkat diisi daya.
 
-### 8. 🔌 Online MCP Library & Multi-Provider LLM
+### 10. 🔌 Online MCP Library & Multi-Provider LLM
 - Hub MCP terintegrasi untuk mencari, mengunduh, dan mengaktifkan MCP tools langsung ke ekosistem coding.
 - Mendukung Claude (Anthropic), OpenAI (GPT-4o), Google Gemini, OpenRouter, Ollama (Llama/Qwen offline), LM Studio, dan custom server.
 
@@ -128,10 +138,11 @@ Semua paket build siap pakai untuk Windows dan Android tersedia di folder `windo
 
 | Tipe File | Nama File | Deskripsi |
 | :--- | :--- | :--- |
-| **Windows Installer** | `Coucou-Windows-0.5.5-setup.exe` / `Coucou-Windows-setup.exe` | Installer resmi Windows (NSIS Wizard) |
-| **Windows Portable** | `coucou.exe` | Binary mandiri, langsung jalankan tanpa install |
-| **Android APK** | `app-debug.apk` / `coucou-phone-v0.5.5.apk` | Aplikasi pendamping Android (Phone Link) |
-| **Full Release ZIP** | `NexIsland-v0.5.5-Windows.zip` | Arsip lengkap portable executable + installer |
+| **Windows Installer** | `Coucou-Windows-0.5.5-setup.exe` / `NexIsland-Windows-0.5.5-setup.exe` | Installer resmi Windows (NSIS Wizard) |
+| **Windows Portable** | `coucou.exe` / `NexIsland.exe` | Binary mandiri, langsung jalankan tanpa install |
+| **Android APK** | `coucou-phone-v0.5.5.apk` / `NexIsland-phone-v0.5.5.apk` | Aplikasi pendamping Android (Phone Link) |
+| **Windows Release ZIP** | `NexIsland-v0.5.5-Windows.zip` | Arsip lengkap portable executable + installer |
+| **Full Release ZIP** | `NexIsland-v0.5.5-Full-Release.zip` | Bundel lengkap Windows (Portable + Installer) & Android APK |
 
 ---
 

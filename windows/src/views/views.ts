@@ -23,6 +23,8 @@ import { buildRecap } from "./recap";
 import { buildWardrobe } from "./wardrobe";
 import { buildSpotifyCard, buildSpotifyPill, type SpotifyPillHost } from "./spotify";
 import { SPOTIFY_ID } from "../core/spotify";
+import { buildPomodoro } from "./pomodoro";
+import { buildTodoList } from "./todolist";
 import type { Outfit, OutfitSelection } from "../mochi/wardrobe";
 import { language, t, tl, type Msg } from "../i18n/i18n";
 import type { ViewCommand } from "../island/shortcuts";
@@ -108,6 +110,8 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 
 export function buildHeader(actions: ViewActions): ViewHost {
   const tabHome = h("button", { class: "tab", title: tl("Overview"), onclick: () => go("overview") }, svg(ICONS.house, 13));
+  const tabPomo = h("button", { class: "tab", title: "Pomodoro", onclick: () => go("pomodoro") }, svg(ICONS.timer, 13));
+  const tabTodo = h("button", { class: "tab", title: "TodoList", onclick: () => go("todolist") }, svg(ICONS.check, 13));
   const tabChat = h("button", { class: "tab", title: tl("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: tl("Drop"), onclick: () => go("upload") }, svg(ICONS.plus, 13));
 
@@ -127,7 +131,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
+    h("div", { class: "tabs" }, tabHome, tabPomo, tabTodo, tabChat, tabDrop),
     h("div", { class: "header-actions" }, planPills, gearBtn, soundBtn),
   );
   const headerActions = el.lastElementChild as HTMLElement;
@@ -137,6 +141,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
     sync() {
       const v = State.view;
       tabHome.classList.toggle("on", v === "overview" || v === "empty");
+      tabPomo.classList.toggle("on", v === "pomodoro");
+      tabTodo.classList.toggle("on", v === "todolist");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
       gearBtn.classList.toggle("on", v === "settings");
@@ -200,9 +206,16 @@ function buildOverview(actions: ViewActions): ViewHost {
   const spotifyCard = buildSpotifyCard();
   let spotifyPill: SpotifyPillHost | null = null;
 
+  const dot0 = h("span", { class: "pomo-dot-pill active" });
+  const dot1 = h("span", { class: "pomo-dot", title: "Pomodoro", onclick: () => { actions.blip(); actions.setView("pomodoro"); } });
+  const dot2 = h("span", { class: "pomo-dot", title: "TodoList", onclick: () => { actions.blip(); actions.setView("todolist"); } });
+  const dot3 = h("span", { class: "pomo-dot", title: "Notes", onclick: () => { actions.blip(); actions.setView("note"); } });
+  const pagination = h("div", { class: "pomo-pagination", style: "position:absolute;bottom:6px;left:50%;transform:translateX(-50%);z-index:5;" }, dot0, dot1, dot2, dot3);
+
   const el = h("div", { class: "view overview" },
     h("div", { class: "left" }, left),
     h("div", { class: "right" }, right),
+    pagination,
   );
 
   let pillIds = "";
@@ -713,13 +726,76 @@ function buildConfused(): ViewHost {
 
 // ── Note ──────────────────────────────────────────────────────────────────────
 
-function buildNote(): ViewHost {
-  const title = h("div", { class: "title" });
-  const el = h("div", { class: "view" }, card(null, h("div", { class: "stack", style: "padding:0 18px 0 98px" }, title)));
+function buildNote(actions: ViewActions): ViewHost {
+  const textarea = h("textarea", {
+    class: "note-textarea",
+    placeholder: "Type quick notes, ideas, or snippets here...",
+  }) as HTMLTextAreaElement;
+
+  try {
+    textarea.value = localStorage.getItem("nexisland_quick_note") || "";
+  } catch {}
+
+  textarea.addEventListener("input", () => {
+    try {
+      localStorage.setItem("nexisland_quick_note", textarea.value);
+    } catch {}
+  });
+
+  const leftNavBtn = h(
+    "button",
+    {
+      class: "pomo-nav-btn",
+      title: "Previous Card (TodoList)",
+      onclick: () => {
+        actions.blip();
+        actions.setView("todolist");
+      },
+    },
+    svg(ICONS.chevronLeft, 14),
+  );
+
+  const rightNavBtn = h(
+    "button",
+    {
+      class: "pomo-nav-btn",
+      title: "Next Card (Overview)",
+      onclick: () => {
+        actions.blip();
+        actions.setView("overview");
+      },
+    },
+    svg(ICONS.chevronRight, 14),
+  );
+
+  const dot0 = h("span", { class: "pomo-dot", onclick: () => { actions.blip(); actions.setView("overview"); } });
+  const dot1 = h("span", { class: "pomo-dot", onclick: () => { actions.blip(); actions.setView("pomodoro"); } });
+  const dot2 = h("span", { class: "pomo-dot", onclick: () => { actions.blip(); actions.setView("todolist"); } });
+  const dot3 = h("span", { class: "pomo-dot-pill active" });
+  const pagination = h("div", { class: "pomo-pagination" }, dot0, dot1, dot2, dot3);
+
+  const body = h(
+    "div",
+    { class: "pomo-card", style: "padding:8px 14px 6px 14px;" },
+    h("div", { class: "pomo-top-bar" },
+      h("span", { class: "pomo-header-title", text: "Notes" }),
+      h("span", { class: "pomo-dots", text: "•••••" }),
+    ),
+    h("div", { class: "pomo-middle-row", style: "gap:10px;align-items:center;" },
+      leftNavBtn,
+      h("div", { style: "flex:1;height:88px;display:flex;flex-direction:column;" }, textarea),
+      rightNavBtn,
+    ),
+    pagination,
+  );
+
+  const el = h("div", { class: "view note-view" }, body);
   return {
     el,
     sync() {
-      title.textContent = State.noteMessage ?? "";
+      if (State.noteMessage) {
+        textarea.value = State.noteMessage;
+      }
     },
   };
 }
@@ -814,7 +890,7 @@ export function buildViews(
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());
-  map.set("note", buildNote());
+  map.set("note", buildNote(actions));
   map.set("settings", buildSettings(actions));
   map.set("prompt", buildPrompt(onChatHeightChange));
   map.set("upload", buildUpload());
@@ -822,6 +898,8 @@ export function buildViews(
   map.set("choose", buildChoose(actions));
   map.set("recap", buildRecap(actions));
   map.set("wardrobe", buildWardrobe(actions));
+  map.set("pomodoro", buildPomodoro(actions));
+  map.set("todolist", buildTodoList(actions));
   // Not in the Windows v1: sending a file by email, window attach + web result.
   map.set("mail", buildPlaceholder(tl("Sending by email isn't in this version."), ""));
   map.set("searching", buildPlaceholder(tl("Claude is searching…"), ""));
