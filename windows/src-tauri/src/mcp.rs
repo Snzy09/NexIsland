@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 
 use crate::platform;
 
-const MCP_TIMEOUT: Duration = Duration::from_secs(25);
+const MCP_TIMEOUT: Duration = Duration::from_secs(5);
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -763,8 +763,8 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   }
 
   function drawModelButton() {
-    const p = providerDef(State.settings.chatProvider);
-    modelDot.style.background = p.accent;
+    const p = providerDef(State.settings?.chatProvider || "anthropic");
+    modelDot.style.background = p?.accent || "#E07950";
     modelName.textContent = activeModel(State.settings) || t(STRINGS.noModel);
     modelBtn.classList.toggle("open", picker.isOpen);
     modelBtn.disabled = sending;

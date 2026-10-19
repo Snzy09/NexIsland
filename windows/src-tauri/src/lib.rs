@@ -535,8 +535,10 @@ fn chat_reset(chat: State<Chat>) {
 }
 
 #[tauri::command]
-fn mcp_list_tools() -> Vec<mcp::McpTool> {
-    mcp::list_tools()
+async fn mcp_list_tools() -> Vec<mcp::McpTool> {
+    tauri::async_runtime::spawn_blocking(mcp::list_tools)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -550,40 +552,48 @@ async fn mcp_list_library(search: Option<String>) -> Vec<mcp::McpRegistryEntry> 
 }
 
 #[tauri::command]
-fn mcp_install(
+async fn mcp_install(
     id: String,
     env: Option<std::collections::HashMap<String, String>>,
     args: Option<Vec<String>>,
 ) -> Result<mcp::McpInstallOutcome, String> {
-    mcp::install_from_library(&id, env, args)
+    tauri::async_runtime::spawn_blocking(move || mcp::install_from_library(&id, env, args))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn mcp_uninstall(name: String) -> Result<bool, String> {
-    mcp::remove_server(&name)
+async fn mcp_uninstall(name: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || mcp::remove_server(&name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn mcp_add_custom(
+async fn mcp_add_custom(
     name: String,
     command: String,
     args: Vec<String>,
     env: std::collections::HashMap<String, String>,
 ) -> Result<mcp::McpInstallOutcome, String> {
-    let clean = name.trim().to_string();
-    if clean.is_empty() {
-        return Err("Server name cannot be empty".to_string());
-    }
-    mcp::save_server(&clean, mcp::McpServerConfig { command, args, env })?;
-    mcp::invalidate_cache();
-    let tools = mcp::list_tools();
-    let count = tools.iter().filter(|t| t.server == clean).count();
-    Ok(mcp::McpInstallOutcome {
-        server_name: clean.clone(),
-        tools_count: count,
-        success: true,
-        message: format!("Installed custom MCP server '{clean}' with {count} tool(s)"),
+    tauri::async_runtime::spawn_blocking(move || {
+        let clean = name.trim().to_string();
+        if clean.is_empty() {
+            return Err("Server name cannot be empty".to_string());
+        }
+        mcp::save_server(&clean, mcp::McpServerConfig { command, args, env })?;
+        mcp::invalidate_cache();
+        let tools = mcp::list_tools();
+        let count = tools.iter().filter(|t| t.server == clean).count();
+        Ok(mcp::McpInstallOutcome {
+            server_name: clean.clone(),
+            tools_count: count,
+            success: true,
+            message: format!("Installed custom MCP server '{clean}' with {count} tool(s)"),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

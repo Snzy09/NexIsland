@@ -535,7 +535,8 @@ function chatProvidersSection(
   const list = h("div", { style: "display:flex;flex-direction:column;gap:8px" });
   for (const def of CLOUD) {
     const p = providerDef(def.id);
-    const key = p.key!;
+    const key = p.key ?? "";
+    if (!key) continue;
     const input = h("input", {
       type: "password",
       placeholder: present[key] ? CHAT_STRINGS.stored : def.placeholder,
@@ -1834,8 +1835,10 @@ async function render() {
   };
   const chatKeys: Record<string, boolean> = {};
   for (const def of CLOUD) {
-    const key = providerDef(def.id).key!;
-    chatKeys[key] = (await Bridge.secretPresent(key)) ?? false;
+    const key = providerDef(def.id)?.key;
+    if (key) {
+      chatKeys[key] = (await Bridge.secretPresent(key)) ?? false;
+    }
   }
   const customKey = (await Bridge.secretPresent(CUSTOM_SERVER_KEY)) ?? false;
 
