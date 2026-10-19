@@ -163,3 +163,4 @@ Semua paket build siap pakai untuk Windows dan Android tersedia di folder `windo
 ## 📜 Lisensi & Hak Cipta
 - Kode sumber dirilis di bawah lisensi [MIT License](LICENSE).
 - Dikembangkan & dioptimalkan untuk performa tinggi, efisiensi memori, dan fleksibilitas multitasking.
+- Thanks To Coucou
