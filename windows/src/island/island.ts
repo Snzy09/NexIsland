@@ -1380,18 +1380,12 @@ export class Island {
       this.bluetoothBanner.style.display = "flex";
       const devName = State.bluetoothStatus.name || "Bluetooth Device";
       this.bluetoothTitle.textContent = devName;
-      const lvl = State.bluetoothStatus.level;
-      if (lvl != null && lvl >= 0) {
-        this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
-        const circumference = 87.96;
-        const offset = circumference - (lvl / 100) * circumference;
-        this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
-        this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
-      } else {
-        this.bluetoothSub.textContent = t("Connected");
-        this.bluetoothProgressCircle.style.strokeDasharray = "88";
-        this.bluetoothProgressCircle.style.strokeDashoffset = "0";
-      }
+      const lvl = State.bluetoothStatus.level ?? 100;
+      this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
+      const circumference = 87.96;
+      const offset = circumference - (Math.max(0, Math.min(100, lvl)) / 100) * circumference;
+      this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
+      this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
     } else {
       this.bluetoothBanner.style.display = "none";
     }

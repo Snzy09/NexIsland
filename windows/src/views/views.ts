@@ -111,7 +111,7 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 export function buildHeader(actions: ViewActions): ViewHost {
   const tabHome = h("button", { class: "tab", title: tl("Overview"), onclick: () => go("overview") }, svg(ICONS.house, 13));
   const tabPomo = h("button", { class: "tab", title: "Pomodoro", onclick: () => go("pomodoro") }, svg(ICONS.timer, 13));
-  const tabTodo = h("button", { class: "tab", title: "TodoList", onclick: () => go("todolist") }, svg(ICONS.check, 13));
+  const tabTodo = h("button", { class: "tab", title: "TodoList", onclick: () => go("todolist") }, svg(ICONS.check, 13, { stroke: 2.2 }));
   const tabChat = h("button", { class: "tab", title: tl("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: tl("Drop"), onclick: () => go("upload") }, svg(ICONS.plus, 13));
 
@@ -206,16 +206,9 @@ function buildOverview(actions: ViewActions): ViewHost {
   const spotifyCard = buildSpotifyCard();
   let spotifyPill: SpotifyPillHost | null = null;
 
-  const dot0 = h("span", { class: "pomo-dot-pill active" });
-  const dot1 = h("span", { class: "pomo-dot", title: "Pomodoro", onclick: () => { actions.blip(); actions.setView("pomodoro"); } });
-  const dot2 = h("span", { class: "pomo-dot", title: "TodoList", onclick: () => { actions.blip(); actions.setView("todolist"); } });
-  const dot3 = h("span", { class: "pomo-dot", title: "Notes", onclick: () => { actions.blip(); actions.setView("note"); } });
-  const pagination = h("div", { class: "pomo-pagination", style: "position:absolute;bottom:6px;left:50%;transform:translateX(-50%);z-index:5;" }, dot0, dot1, dot2, dot3);
-
   const el = h("div", { class: "view overview" },
     h("div", { class: "left" }, left),
     h("div", { class: "right" }, right),
-    pagination,
   );
 
   let pillIds = "";

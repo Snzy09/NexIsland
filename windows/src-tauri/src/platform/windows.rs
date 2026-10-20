@@ -754,7 +754,7 @@ fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
                     if let Ok(item) = collection.GetAt(i) {
                         let name = item.Name().unwrap_or_default().to_string();
                         if !name.is_empty() && name != "Unknown" {
-                            let level = extract_battery_level(&item);
+                            let level = extract_battery_level(&item).or(Some(100));
                             let device_type = classify_bt_device(&name);
                             return Ok(BluetoothStatus {
                                 connected: true,
@@ -778,7 +778,7 @@ fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
                     if let Ok(item) = collection.GetAt(i) {
                         let name = item.Name().unwrap_or_default().to_string();
                         if !name.is_empty() && name != "Unknown" {
-                            let level = extract_battery_level(&item);
+                            let level = extract_battery_level(&item).or(Some(100));
                             let device_type = classify_bt_device(&name);
                             return Ok(BluetoothStatus {
                                 connected: true,
@@ -806,7 +806,7 @@ fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
                 if let Ok(item) = collection.GetAt(i) {
                     let name = item.Name().unwrap_or_default().to_string();
                     if !name.is_empty() && name != "Unknown" {
-                        let level = extract_battery_level(&item);
+                        let level = extract_battery_level(&item).or(Some(100));
                         let device_type = classify_bt_device(&name);
                         return Ok(BluetoothStatus {
                             connected: true,
