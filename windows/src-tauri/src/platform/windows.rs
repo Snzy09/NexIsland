@@ -890,6 +890,8 @@ pub struct DownloadStatus {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub percent: Option<u8>,
+    #[serde(default)]
+    pub target_path: Option<String>,
 }
 
 pub fn get_mic_mute() -> bool {
@@ -1124,9 +1126,76 @@ pub fn privacy_status() -> PrivacyStatus {
 }
 
 pub fn downloads_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .map(|p| PathBuf::from(p).join("Downloads"))
-        .filter(|p| p.is_dir())
+    // 1. Check registry User Shell Folders for official Downloads location
+    let subpath = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders";
+    let subpath_u16: Vec<u16> = subpath.encode_utf16().chain(std::iter::once(0)).collect();
+    let val_name = "{374DE290-123F-4565-9164-39C4925E467B}";
+    let val_u16: Vec<u16> = val_name.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let mut hkey = HKEY::default();
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            ::windows::core::PCWSTR(subpath_u16.as_ptr()),
+            Some(0),
+            KEY_READ,
+            &mut hkey,
+        ).is_ok() {
+            let mut buf = [0u16; 512];
+            let mut buf_len = (buf.len() * 2) as u32;
+            if RegQueryValueExW(
+                hkey,
+                ::windows::core::PCWSTR(val_u16.as_ptr()),
+                None,
+                None,
+                Some(buf.as_mut_ptr() as *mut u8),
+                Some(&mut buf_len),
+            ).is_ok() {
+                let len = (buf_len / 2) as usize;
+                let s = String::from_utf16_lossy(&buf[..len.saturating_sub(1)]);
+                let resolved = if s.starts_with("%USERPROFILE%") {
+                    if let Some(user) = std::env::var_os("USERPROFILE") {
+                        s.replacen("%USERPROFILE%", &user.to_string_lossy(), 1)
+                    } else {
+                        s
+                    }
+                } else {
+                    s
+                };
+                let p = PathBuf::from(resolved);
+                if p.is_dir() {
+                    let _ = RegCloseKey(hkey);
+                    return Some(p);
+                }
+            }
+            let _ = RegCloseKey(hkey);
+        }
+    }
+
+    // 2. Standard USERPROFILE/Downloads
+    if let Some(home) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
+        let p = home.join("Downloads");
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    // 3. OneDrive/Downloads
+    if let Some(onedrive) = std::env::var_os("OneDrive").map(PathBuf::from) {
+        let p = onedrive.join("Downloads");
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
+struct ActiveCandidate {
+    display_name: String,
+    target_path: PathBuf,
+    len: u64,
+    modified: std::time::SystemTime,
+    is_unconfirmed: bool,
 }
 
 pub fn check_download_status() -> DownloadStatus {
@@ -1137,11 +1206,11 @@ pub fn check_download_status() -> DownloadStatus {
         return DownloadStatus::default();
     };
 
+    let now = std::time::SystemTime::now();
+    let mut candidates = Vec::new();
+
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
@@ -1149,29 +1218,82 @@ pub fn check_download_status() -> DownloadStatus {
         let is_crdownload = name.ends_with(".crdownload");
         let is_part = name.ends_with(".part");
         let is_opdownload = name.ends_with(".opdownload");
+        let is_download = name.ends_with(".download");
 
-        if is_crdownload || is_part || is_opdownload {
-            let clean_name = if is_crdownload {
-                name.strip_suffix(".crdownload").unwrap_or(name)
-            } else if is_part {
-                name.strip_suffix(".part").unwrap_or(name)
-            } else {
-                name.strip_suffix(".opdownload").unwrap_or(name)
-            };
-
-            let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
-
-            return DownloadStatus {
-                active: true,
-                filename: clean_name.to_string(),
-                speed_bytes_per_sec: 0,
-                downloaded_bytes: len,
-                total_bytes: None,
-                percent: None,
-            };
+        if !is_crdownload && !is_part && !is_opdownload && !is_download {
+            continue;
         }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let Ok(elapsed) = now.duration_since(modified) else {
+            continue;
+        };
+
+        // An active download MUST have been written to recently.
+        // Stale, cancelled, or dead files (> 10s since last write) are ignored.
+        if elapsed > std::time::Duration::from_secs(10) {
+            continue;
+        }
+
+        let (clean_name, target_file) = if is_crdownload {
+            let clean = name.strip_suffix(".crdownload").unwrap_or(name);
+            (clean, path.with_extension(""))
+        } else if is_part {
+            let clean = name.strip_suffix(".part").unwrap_or(name);
+            (clean, path.with_extension(""))
+        } else if is_opdownload {
+            let clean = name.strip_suffix(".opdownload").unwrap_or(name);
+            (clean, path.with_extension(""))
+        } else {
+            let clean = name.strip_suffix(".download").unwrap_or(name);
+            (clean, path.with_extension(""))
+        };
+
+        let is_unconfirmed = clean_name.starts_with("Unconfirmed ");
+        let display_name = if is_unconfirmed {
+            "Mengunduh file...".to_string()
+        } else {
+            clean_name.to_string()
+        };
+
+        candidates.push(ActiveCandidate {
+            display_name,
+            target_path: target_file,
+            len: metadata.len(),
+            modified,
+            is_unconfirmed,
+        });
     }
 
-    DownloadStatus::default()
+    if candidates.is_empty() {
+        return DownloadStatus::default();
+    }
+
+    // Sort: confirmed filenames take priority over "Unconfirmed ...", then newest modified time first.
+    candidates.sort_by(|a, b| {
+        if a.is_unconfirmed != b.is_unconfirmed {
+            return a.is_unconfirmed.cmp(&b.is_unconfirmed);
+        }
+        b.modified.cmp(&a.modified)
+    });
+
+    let best = &candidates[0];
+    DownloadStatus {
+        active: true,
+        filename: best.display_name.clone(),
+        speed_bytes_per_sec: 0,
+        downloaded_bytes: best.len,
+        total_bytes: None,
+        percent: None,
+        target_path: Some(best.target_path.to_string_lossy().to_string()),
+    }
 }
 

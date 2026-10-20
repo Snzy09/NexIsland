@@ -988,6 +988,8 @@ pub struct DownloadStatus {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub percent: Option<u8>,
+    #[serde(default)]
+    pub target_path: Option<String>,
 }
 
 pub fn privacy_status() -> PrivacyStatus {

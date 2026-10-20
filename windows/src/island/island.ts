@@ -1638,25 +1638,47 @@ export class Island {
         this.downloadSub.textContent = State.downloadCompleteFile || "";
         this.downloadPercent.textContent = "100%";
         this.downloadProgressCircle.style.strokeDashoffset = "0";
+        this.downloadProgressCircle.classList.remove("indeterminate");
       } else {
-        this.downloadTitle.textContent = State.downloadStatus.filename || "Mengunduh file...";
+        const rawName = State.downloadStatus.filename;
+        this.downloadTitle.textContent = (rawName && !rawName.startsWith("Unconfirmed "))
+          ? rawName
+          : "Mengunduh file...";
+
         const speed = State.downloadStatus.speedBytesPerSec;
         let speedStr = "0 KB/s";
-        if (speed > 1024 * 1024) {
+        if (speed >= 1024 * 1024) {
           speedStr = `${(speed / (1024 * 1024)).toFixed(1)} MB/s`;
-        } else if (speed > 1024) {
+        } else if (speed >= 1024) {
           speedStr = `${(speed / 1024).toFixed(0)} KB/s`;
+        } else if (speed > 0) {
+          speedStr = `${speed} B/s`;
         }
-        const pct = State.downloadStatus.percent;
-        this.downloadSub.textContent = pct != null ? `${speedStr} · ${pct}%` : `${speedStr} · Mengunduh...`;
 
-        const mbDownloaded = (State.downloadStatus.downloadedBytes / (1024 * 1024)).toFixed(1);
-        this.downloadPercent.textContent = pct != null ? `${pct}%` : `${mbDownloaded} MB`;
+        const pct = State.downloadStatus.percent;
+        const downloaded = State.downloadStatus.downloadedBytes;
+        let downloadedStr = "0 B";
+        if (downloaded >= 1024 * 1024 * 1024) {
+          downloadedStr = `${(downloaded / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+        } else if (downloaded >= 1024 * 1024) {
+          downloadedStr = `${(downloaded / (1024 * 1024)).toFixed(1)} MB`;
+        } else if (downloaded >= 1024) {
+          downloadedStr = `${(downloaded / 1024).toFixed(0)} KB`;
+        } else if (downloaded > 0) {
+          downloadedStr = `${downloaded} B`;
+        }
+
+        this.downloadSub.textContent = pct != null ? `${speedStr} · ${pct}%` : `${speedStr} · Mengunduh...`;
+        this.downloadPercent.textContent = pct != null ? `${pct}%` : downloadedStr;
 
         const circumference = 87.96;
-        const progressPct = pct ?? 45;
-        const offset = circumference - (Math.max(0, Math.min(100, progressPct)) / 100) * circumference;
-        this.downloadProgressCircle.style.strokeDashoffset = `${offset}`;
+        if (pct != null) {
+          const offset = circumference - (Math.max(0, Math.min(100, pct)) / 100) * circumference;
+          this.downloadProgressCircle.style.strokeDashoffset = `${offset}`;
+          this.downloadProgressCircle.classList.remove("indeterminate");
+        } else {
+          this.downloadProgressCircle.classList.add("indeterminate");
+        }
       }
     } else {
       this.downloadBanner.style.display = "none";

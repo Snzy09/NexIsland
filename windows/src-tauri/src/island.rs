@@ -5,9 +5,10 @@
 // centre of the main display inside a borderless, transparent, always-on-top
 // window that never takes focus.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewWindow};
@@ -754,24 +755,71 @@ pub fn spawn_download_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last_bytes: u64 = 0;
         let mut last_name = String::new();
+        let mut last_target_path: Option<PathBuf> = None;
+        let mut last_instant = Instant::now();
         let mut was_active = false;
+        let mut smoothed_speed: f64 = 0.0;
+        let mut inactive_ticks: u32 = 0;
+
         loop {
             std::thread::sleep(Duration::from_millis(1000));
             let mut status = platform::check_download_status();
+
             if status.active {
-                if status.filename == last_name && status.downloaded_bytes >= last_bytes {
-                    status.speed_bytes_per_sec = status.downloaded_bytes - last_bytes;
+                inactive_ticks = 0;
+                let dt = last_instant.elapsed().as_secs_f64().max(0.2);
+                last_instant = Instant::now();
+
+                let is_same_download = !last_name.is_empty() && (
+                    status.filename == last_name || 
+                    last_name == "Mengunduh file..." || 
+                    status.filename == "Mengunduh file..." ||
+                    status.target_path.as_deref() == last_target_path.as_ref().and_then(|p| p.to_str())
+                );
+
+                if is_same_download && status.downloaded_bytes >= last_bytes {
+                    let bytes_diff = status.downloaded_bytes - last_bytes;
+                    let raw_speed = bytes_diff as f64 / dt;
+                    smoothed_speed = if smoothed_speed <= 0.0 {
+                        raw_speed
+                    } else {
+                        smoothed_speed * 0.35 + raw_speed * 0.65
+                    };
+                    status.speed_bytes_per_sec = smoothed_speed.round() as u64;
+                } else {
+                    smoothed_speed = 0.0;
+                    status.speed_bytes_per_sec = 0;
                 }
+
                 last_bytes = status.downloaded_bytes;
-                last_name = status.filename.clone();
+                if status.filename != "Mengunduh file..." || last_name.is_empty() {
+                    last_name = status.filename.clone();
+                }
+                if let Some(ref tp) = status.target_path {
+                    last_target_path = Some(PathBuf::from(tp));
+                }
                 was_active = true;
                 let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
             } else if was_active {
-                was_active = false;
-                last_bytes = 0;
-                let completed_name = std::mem::take(&mut last_name);
-                let _ = app.emit_to(WINDOW_LABEL, "download-complete", completed_name);
-                let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
+                inactive_ticks += 1;
+                if inactive_ticks >= 1 {
+                    was_active = false;
+                    inactive_ticks = 0;
+                    last_bytes = 0;
+                    smoothed_speed = 0.0;
+
+                    let target = last_target_path.take();
+                    let completed_name = std::mem::take(&mut last_name);
+
+                    // Check if the final file actually exists!
+                    let actually_completed = target.as_ref().map(|p| p.is_file()).unwrap_or(false);
+                    let is_valid_name = !completed_name.is_empty() && completed_name != "Mengunduh file...";
+
+                    if actually_completed && is_valid_name {
+                        let _ = app.emit_to(WINDOW_LABEL, "download-complete", completed_name);
+                    }
+                    let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
+                }
             }
         }
     });

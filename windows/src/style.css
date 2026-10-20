@@ -480,6 +480,23 @@ body {
   transition: stroke-dashoffset 0.3s ease;
 }
 
+.dl-ring-progress.indeterminate {
+  animation: dl-pulse-ring 1.5s ease-in-out infinite;
+  stroke-dasharray: 44 43.96;
+}
+
+@keyframes dl-pulse-ring {
+  0% {
+    stroke-dashoffset: 87.96;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -87.96;
+  }
+}
+
 .dl-center-icon {
   width: 16px;
   height: 16px;
