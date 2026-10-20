@@ -434,7 +434,12 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
             let mut last = (f64::MIN, f64::MIN);
             let mut ticks: u32 = 0;
             while gate.is_active() {
-                std::thread::sleep(Duration::from_millis(period));
+                let cur_period = if platform::CURSOR_POLL && gate.collapsed.load(Ordering::Relaxed) {
+                    33
+                } else {
+                    period
+                };
+                std::thread::sleep(Duration::from_millis(cur_period));
 
                 // Monitors get plugged in, unplugged, rearranged and rescaled, and
                 // an island pinned to coordinates that no longer exist is an island
@@ -591,10 +596,16 @@ pub fn browser_tab_count(hwnd: windows::Win32::Foundation::HWND) -> Option<usize
         use windows::Win32::UI::Accessibility::*;
         use windows::Win32::System::Variant::*;
 
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let automation: IUIAutomation = match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
-            Ok(auto) => auto,
-            Err(_) => return None,
+        thread_local! {
+            static AUTOMATION: Option<IUIAutomation> = unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()
+            };
+        }
+
+        let automation = match AUTOMATION.with(|auto| auto.clone()) {
+            Some(auto) => auto,
+            None => return None,
         };
         let element = match automation.ElementFromHandle(hwnd) {
             Ok(el) => el,
@@ -718,6 +729,18 @@ pub fn spawn_bluetooth_watcher(app: AppHandle) {
             if status != last_status {
                 last_status = status.clone();
                 let _ = app.emit_to(WINDOW_LABEL, "bluetooth-status", status);
+            }
+        }
+    });
+}
+
+/// Trims physical memory every 60 seconds when the island is collapsed/idle
+pub fn spawn_memory_trimmer(gate: Arc<PollGate>) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(60));
+            if gate.collapsed.load(Ordering::Relaxed) {
+                platform::trim_memory();
             }
         }
     });

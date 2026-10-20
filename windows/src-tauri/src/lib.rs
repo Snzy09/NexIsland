@@ -816,6 +816,11 @@ fn bluetooth_status() -> platform::BluetoothStatus {
     platform::bluetooth_status()
 }
 
+#[tauri::command]
+fn trim_memory() {
+    platform::trim_memory();
+}
+
 pub fn run() {
     platform::prepare_environment();
     let loaded = settings::load();
@@ -905,6 +910,7 @@ pub fn run() {
             set_paused,
             battery_status,
             bluetooth_status,
+            trim_memory,
             browser_tabs_blocked,
             shortcuts_status,
             shortcuts_suspend,
@@ -1032,6 +1038,7 @@ pub fn run() {
             island::spawn_browser_tabs_watcher(handle.clone());
             island::spawn_battery_watcher(handle.clone());
             island::spawn_bluetooth_watcher(handle.clone());
+            island::spawn_memory_trimmer(gate.clone());
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);

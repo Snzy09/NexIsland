@@ -270,6 +270,8 @@ export const Bridge = {
   batteryStatus: () => call<BatteryStatus>("battery_status"),
   /** Connected Bluetooth device status */
   bluetoothStatus: () => call<BluetoothStatus>("bluetooth_status"),
+  /** Trims working set memory */
+  trimMemory: () => call<void>("trim_memory"),
 
   /** Displays the island can be pinned to: `key` is what `settings.screen` stores. */
   listMonitors: () => call<{ key: string; label: string }[]>("list_monitors"),

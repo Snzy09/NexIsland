@@ -967,3 +967,5 @@ pub fn bluetooth_status() -> BluetoothStatus {
     BluetoothStatus::default()
 }
 
+pub fn trim_memory() {}
+

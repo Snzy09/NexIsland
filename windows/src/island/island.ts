@@ -1124,6 +1124,11 @@ export class Island {
     this.botSize.step(dt);
 
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
+    const away = State.mochiOnDesktop;
+    const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const chargingCompact = State.mode === "compact" && State.isCharging && !bluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
+    const botVisible = !away && !chargingCompact && !bluetoothCompact;
+
     if (greetingActive) {
       const gctx = this.greetingCanvas.getContext("2d");
       if (gctx) {
@@ -1156,17 +1161,21 @@ export class Island {
     // spends most of its life in. Geometry still has to finish retracting.
     const settling =
       this.width.animating || this.height.animating || this.radius.animating;
+    const botActive = (botVisible || this.uploadActive) && this.engine.busy;
     const busy = State.mode === "hidden"
       ? settling
       : settling ||
         !this.botCx.settled || !this.botCy.settled || !this.botSize.settled ||
-        greetingActive || this.engine.busy || UploadSeq.isActive || viewAnimating;
+        greetingActive || botActive || UploadSeq.isActive || viewAnimating;
 
     if (busy) {
       requestAnimationFrame(this.frame);
     } else {
       this.running = false;
       Sound.idle();
+      if (State.mode === "hidden") {
+        void Bridge.trimMemory();
+      }
     }
   };
 

@@ -1,6 +1,7 @@
 import { h, svg } from "./dom";
 import { ICONS } from "./icons";
 import { Sound } from "../core/sound";
+import { State } from "../core/state";
 import { formatLiveDate } from "./pomodoro";
 import type { ViewActions, ViewHost } from "./views";
 
@@ -208,6 +209,7 @@ export function buildTodoList(actions: ViewActions): ViewHost {
   }
 
   function syncClock() {
+    if (State.view !== "todolist" || State.mode !== "expanded") return;
     const dateStr = formatLiveDate(new Date());
     if (dateStr !== lastDateStr) {
       dateTimeEl.textContent = dateStr;

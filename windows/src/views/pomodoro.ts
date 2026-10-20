@@ -1,6 +1,7 @@
 import { h, svg } from "./dom";
 import { ICONS } from "./icons";
 import { Sound } from "../core/sound";
+import { State } from "../core/state";
 import type { ViewActions, ViewHost } from "./views";
 
 export type PomodoroMode = "focus" | "short_break" | "long_break";
@@ -181,6 +182,7 @@ export function buildPomodoro(actions: ViewActions): ViewHost {
   let clockInterval: number | null = null;
 
   function syncDisplay() {
+    if (State.view !== "pomodoro" || State.mode !== "expanded") return;
     const now = new Date();
     const dateStr = formatLiveDate(now);
     if (dateStr !== lastDateStr) { dateTimeEl.textContent = dateStr; lastDateStr = dateStr; }

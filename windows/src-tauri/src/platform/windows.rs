@@ -93,8 +93,23 @@ pub fn ensure_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
-/// Nothing to set up before the webview starts.
-pub fn prepare_environment() {}
+/// Optimizes WebView2 memory footprint and background resource usage before startup.
+pub fn prepare_environment() {
+    if std::env::var_os("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_none() {
+        std::env::set_var(
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--js-flags=--max-old-space-size=128 --renderer-process-limit=1 --process-per-site --disable-features=Translate,InterestFeedContentSuggestions,CalculateNativeWinOcclusion --enable-features=MojoIpcz",
+        );
+    }
+}
+
+/// Trims physical memory (working set) of the current process, freeing unused heap pages to OS.
+pub fn trim_memory() {
+    unsafe {
+        use windows::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
+        let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+    }
+}
 
 pub fn local_time() -> LocalTime {
     let t = unsafe { GetLocalTime() };
