@@ -13,7 +13,7 @@ import type { Bindings } from "./shortcuts";
 import { DEFAULT_OUTFIT, type Outfit } from "../mochi/wardrobe";
 import { pillColor } from "./pill-colors";
 import { Spotify, musicPlaying } from "./spotify";
-import type { BatteryStatus } from "./bridge";
+import type { BatteryStatus, BluetoothStatus } from "./bridge";
 
 export type AgentSource = "claudeCode" | "n8n" | "agent";
 export type PillBadge = "approval" | "finished" | "error";
@@ -290,6 +290,14 @@ class AppState {
     charging: false,
     level: 100,
     hasBattery: false,
+  };
+
+  /** Connected Bluetooth device status */
+  bluetoothStatus: BluetoothStatus = {
+    connected: false,
+    name: "",
+    level: null,
+    deviceType: "audio",
   };
 
   get isCharging(): boolean {

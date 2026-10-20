@@ -696,3 +696,83 @@ pub fn battery_status() -> BatteryStatus {
     }
 }
 
+// ── Bluetooth status ──────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BluetoothStatus {
+    pub connected: bool,
+    pub name: String,
+    pub level: Option<u8>,
+    pub device_type: String,
+}
+
+pub fn bluetooth_status() -> BluetoothStatus {
+    if let Ok(status) = winrt_bluetooth_status() {
+        if status.connected {
+            return status;
+        }
+    }
+
+    BluetoothStatus::default()
+}
+
+fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
+    use windows::core::{Interface, HSTRING};
+    use windows::Devices::Enumeration::DeviceInformation;
+    use windows::Foundation::IPropertyValue;
+
+    let filter = HSTRING::from("System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cdb3-4642-bbd1-63809e077697}\" AND System.Devices.Aep.IsConnected:=System.StructuredQueryType.Boolean#True");
+    let async_op = DeviceInformation::FindAllAsyncAqsFilter(&filter)?;
+    let collection = async_op.get()?;
+    let count = collection.Size()?;
+
+    for i in 0..count {
+        if let Ok(item) = collection.GetAt(i) {
+            let name = item.Name().unwrap_or_default().to_string();
+            if name.is_empty() || name == "Unknown" {
+                continue;
+            }
+
+            let mut level = None;
+            if let Ok(props) = item.Properties() {
+                let key1 = HSTRING::from("{104ea319-6ee2-4701-bd47-8ddbf425bbe5} 2");
+                let key2 = HSTRING::from("System.Devices.BatteryPercent");
+                if let Ok(inspectable) = props.Lookup(&key1).or_else(|_| props.Lookup(&key2)) {
+                    if let Ok(pv) = inspectable.cast::<IPropertyValue>() {
+                        if let Ok(v) = pv.GetUInt8() {
+                            level = Some(v.min(100));
+                        } else if let Ok(v) = pv.GetInt32() {
+                            level = Some((v.clamp(0, 100)) as u8);
+                        }
+                    }
+                }
+            }
+
+            let lower = name.to_lowercase();
+            let device_type = if lower.contains("bud")
+                || lower.contains("pod")
+                || lower.contains("headphone")
+                || lower.contains("headset")
+                || lower.contains("ear")
+                || lower.contains("tws")
+                || lower.contains("air")
+                || lower.contains("audio")
+            {
+                "headphones".to_string()
+            } else {
+                "audio".to_string()
+            };
+
+            return Ok(BluetoothStatus {
+                connected: true,
+                name,
+                level,
+                device_type,
+            });
+        }
+    }
+
+    Ok(BluetoothStatus::default())
+}
+

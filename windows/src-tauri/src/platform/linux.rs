@@ -952,3 +952,18 @@ pub fn battery_status() -> BatteryStatus {
     BatteryStatus::default()
 }
 
+// ── Bluetooth status ──────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BluetoothStatus {
+    pub connected: bool,
+    pub name: String,
+    pub level: Option<u8>,
+    pub device_type: String,
+}
+
+pub fn bluetooth_status() -> BluetoothStatus {
+    BluetoothStatus::default()
+}
+

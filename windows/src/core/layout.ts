@@ -67,6 +67,10 @@ export const COMPACT_CHARGING_W = 330;
 export const COMPACT_CHARGING_H = 50;
 export const COMPACT_CHARGING_R = 16;
 
+export const COMPACT_BT_W = 340;
+export const COMPACT_BT_H = 50;
+export const COMPACT_BT_R = 16;
+
 /** Minimized capsule pill shown when auto-minimized (e.g. for browser tabs). */
 export const MINIMIZED_PILL_W = 140;
 export const MINIMIZED_PILL_H = 12;
@@ -96,7 +100,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   prompt: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   searching: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   result: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
+  note: { height: 184, botX: 60, botY: null, botDiameter: 0, agentMode: "none" },
   settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
   // Mac: 160. The extra 24 hold the two lines with top agent, project, busiest
@@ -104,8 +108,8 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   // to the shared image.
   recap: { height: 184, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
   wardrobe: { height: 160, botX: 68, botY: null, botDiameter: 58, agentMode: "none" },
-  pomodoro: { height: 168, botX: 68, botY: null, botDiameter: 0, agentMode: "none" },
-  todolist: { height: 168, botX: 68, botY: null, botDiameter: 0, agentMode: "none" },
+  pomodoro: { height: 184, botX: 68, botY: null, botDiameter: 0, agentMode: "none" },
+  todolist: { height: 184, botX: 68, botY: null, botDiameter: 0, agentMode: "none" },
 };
 
 // The upload views above are only the fallback geometry. Once a file is actually
@@ -125,11 +129,15 @@ export function islandSize(
   view: IslandViewName,
   chatCount = 0,
   charging = false,
+  bluetooth = false,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
       return { w: MINIMIZED_PILL_W, h: MINIMIZED_PILL_H };
     case "compact":
+      if (bluetooth) {
+        return { w: COMPACT_BT_W, h: COMPACT_BT_H };
+      }
       if (charging) {
         return { w: COMPACT_CHARGING_W, h: COMPACT_CHARGING_H };
       }

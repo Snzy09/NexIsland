@@ -2,9 +2,10 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
-import { Bridge, IS_TAURI, onDragDrop, onEvent, type BatteryStatus } from "../core/bridge";
+import { Bridge, IS_TAURI, onDragDrop, onEvent, type BatteryStatus, type BluetoothStatus } from "../core/bridge";
 import {
   COMPACT_CHARGING_R,
+  COMPACT_BT_R,
   EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
   ROUNDED_CORNER, VIEW_LAYOUTS, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
@@ -68,6 +69,13 @@ export class Island {
   private chargingTitle!: HTMLElement;
   private chargingSub!: HTMLElement;
   private chargingPercent!: HTMLElement;
+
+  private bluetoothBanner!: HTMLElement;
+  private bluetoothRing!: HTMLElement;
+  private bluetoothProgressCircle!: SVGCircleElement;
+  private bluetoothTitle!: HTMLElement;
+  private bluetoothSub!: HTMLElement;
+  private bluetoothRight!: HTMLElement;
 
   private header!: ViewHost;
   private views!: Map<IslandViewName, ViewHost>;
@@ -146,6 +154,16 @@ export class Island {
         State.notify();
       }
     });
+    void onEvent<BluetoothStatus>("bluetooth-status", (status) => {
+      this.handleBluetoothStatus(status);
+    });
+    void Bridge.bluetoothStatus().then((status) => {
+      if (status) {
+        State.bluetoothStatus = status;
+        this.animateGeometry(false);
+        State.notify();
+      }
+    });
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => {
       this.fsm.greetComplete();
@@ -175,6 +193,19 @@ export class Island {
     const wasCharging = State.batteryStatus.charging;
     State.batteryStatus = status;
     if (!wasCharging && status.charging) {
+      Sound.play("pop");
+      if (this.fsm.state === "hidden") {
+        this.fsm.reveal();
+      }
+    }
+    this.animateGeometry(false);
+    State.notify();
+  }
+
+  private handleBluetoothStatus(status: BluetoothStatus) {
+    const wasConnected = State.bluetoothStatus.connected;
+    State.bluetoothStatus = status;
+    if (!wasConnected && status.connected) {
       Sound.play("pop");
       if (this.fsm.state === "hidden") {
         this.fsm.reveal();
@@ -358,6 +389,39 @@ export class Island {
     this.chargingBanner = h("div", { id: "charging-banner" }, chargingLeft, this.chargingPercent);
     this.chargingBanner.addEventListener("click", () => this.fsm.click());
 
+    // Bluetooth notch banner (Image 3)
+    const btSvgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    btSvgCircle.setAttribute("cx", "16");
+    btSvgCircle.setAttribute("cy", "16");
+    btSvgCircle.setAttribute("r", "14");
+    btSvgCircle.setAttribute("class", "bt-ring-progress");
+    const btSvgBg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    btSvgBg.setAttribute("cx", "16");
+    btSvgBg.setAttribute("cy", "16");
+    btSvgBg.setAttribute("r", "14");
+    btSvgBg.setAttribute("class", "bt-ring-bg");
+    const btSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    btSvg.setAttribute("viewBox", "0 0 32 32");
+    btSvg.setAttribute("class", "bt-ring-svg");
+    btSvg.appendChild(btSvgBg);
+    btSvg.appendChild(btSvgCircle);
+    this.bluetoothProgressCircle = btSvgCircle;
+
+    const btIconInside = h("div", { class: "bt-center-icon" }, svg(ICONS.bluetooth, 12, { fill: "#fff" }));
+    this.bluetoothRing = h("div", { class: "bt-ring-wrap" }, btSvg as unknown as HTMLElement, btIconInside);
+
+    this.bluetoothTitle = h("div", { class: "bt-title" }, "Bluetooth");
+    this.bluetoothSub = h("div", { class: "bt-sub" }, t("Connected"));
+    const btInfo = h("div", { class: "bt-info" }, this.bluetoothTitle, this.bluetoothSub);
+    const btLeft = h("div", { class: "bt-left" }, this.bluetoothRing, btInfo);
+
+    const audioGlow = h("div", { class: "bt-audio-glow" });
+    const audioInner = h("div", { class: "bt-audio-circle" }, svg(ICONS.headphones, 14, { fill: "#fff" }));
+    this.bluetoothRight = h("div", { class: "bt-right" }, audioGlow, audioInner);
+
+    this.bluetoothBanner = h("div", { id: "bluetooth-banner" }, btLeft, this.bluetoothRight);
+    this.bluetoothBanner.addEventListener("click", () => this.fsm.click());
+
     this.islandEl = h(
       "div",
       { id: "island" },
@@ -366,6 +430,7 @@ export class Island {
       this.botCanvas,
       this.miniGrid,
       this.chargingBanner,
+      this.bluetoothBanner,
       this.countdown,
     );
 
@@ -722,12 +787,13 @@ export class Island {
     if (State.mode === "hidden") {
       return { w: MINIMIZED_PILL_W, h: MINIMIZED_PILL_H, r: MINIMIZED_PILL_R };
     }
-    const isChargingCompact = State.mode === "compact" && State.isCharging && (State.settings.chargingStatusInIsland ?? true);
-    let { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, isChargingCompact);
+    const isBluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const isChargingCompact = State.mode === "compact" && State.isCharging && !isBluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
+    let { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, isChargingCompact, isBluetoothCompact);
     if (State.mode === "expanded" && State.view === "question" && State.pendingApproval?.questions) {
       h = QUESTION_PICKER_H;
     }
-    const r = State.mode === "expanded" ? EXPANDED_CORNER : isChargingCompact ? COMPACT_CHARGING_R : ROUNDED_CORNER;
+    const r = State.mode === "expanded" ? EXPANDED_CORNER : isBluetoothCompact ? COMPACT_BT_R : isChargingCompact ? COMPACT_CHARGING_R : ROUNDED_CORNER;
     return { w, h, r };
   }
 
@@ -1114,8 +1180,9 @@ export class Island {
     // The drop canvas draws its own Mochi; two of them would overlap. Out on the
     // desktop, he isn't here at all.
     const away = State.mochiOnDesktop;
-    const chargingCompact = State.mode === "compact" && State.isCharging && (State.settings.chargingStatusInIsland ?? true);
-    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !away && !chargingCompact;
+    const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const chargingCompact = State.mode === "compact" && State.isCharging && !bluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
+    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !away && !chargingCompact && !bluetoothCompact;
     this.botCanvas.style.opacity = visible ? "1" : "0";
 
     if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive && !away) {
@@ -1265,9 +1332,10 @@ export class Island {
       }
     }
 
-    // Compact mini grid & charging banner
-    const chargingCompact = State.mode === "compact" && State.isCharging && (State.settings.chargingStatusInIsland ?? true);
-    const showGrid = State.mode === "compact" && !chargingCompact;
+    // Compact mini grid, charging banner & bluetooth notch banner
+    const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const chargingCompact = State.mode === "compact" && State.isCharging && !bluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
+    const showGrid = State.mode === "compact" && !chargingCompact && !bluetoothCompact;
     this.miniGrid.style.opacity = showGrid ? "1" : "0";
     if (showGrid) {
       const others = State.otherTasks.slice(0, 4);
@@ -1280,6 +1348,26 @@ export class Island {
         }
         pruneMiniBots();
       }
+    }
+
+    if (bluetoothCompact) {
+      this.bluetoothBanner.style.display = "flex";
+      const devName = State.bluetoothStatus.name || "Bluetooth Device";
+      this.bluetoothTitle.textContent = devName;
+      const lvl = State.bluetoothStatus.level;
+      if (lvl != null && lvl >= 0) {
+        this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
+        const circumference = 87.96;
+        const offset = circumference - (lvl / 100) * circumference;
+        this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
+        this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+      } else {
+        this.bluetoothSub.textContent = t("Connected");
+        this.bluetoothProgressCircle.style.strokeDasharray = "88";
+        this.bluetoothProgressCircle.style.strokeDashoffset = "0";
+      }
+    } else {
+      this.bluetoothBanner.style.display = "none";
     }
 
     if (chargingCompact) {

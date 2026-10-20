@@ -337,7 +337,7 @@ mod zoom_tests {
         assert!(super::is_tab_count_blocked(Some(3)));
         assert!(super::is_tab_count_blocked(Some(4)));
         assert!(super::is_tab_count_blocked(Some(10)));
-        assert!(super::is_tab_count_blocked(None));
+        assert!(!super::is_tab_count_blocked(None));
     }
 }
 
@@ -575,12 +575,12 @@ pub fn browser_tab_count(hwnd: windows::Win32::Foundation::HWND) -> Option<usize
             String::new()
         };
 
-        // Cache valid for 1200ms if HWND and window title match
+        // Cache valid for 2000ms if HWND and window title match
         if let Ok(guard) = BROWSER_TAB_CACHE.lock() {
             if let Some(ref cache) = *guard {
                 if cache.hwnd == hwnd.0 as isize
                     && cache.title == title
-                    && cache.timestamp.elapsed() < Duration::from_millis(1200)
+                    && cache.timestamp.elapsed() < Duration::from_millis(2000)
                 {
                     return cache.count;
                 }
@@ -627,7 +627,7 @@ pub fn browser_tab_count(hwnd: windows::Win32::Foundation::HWND) -> Option<usize
 pub fn is_tab_count_blocked(tabs: Option<usize>) -> bool {
     match tabs {
         Some(count) => count >= 3,
-        None => true, // default to blocking if unable to count tabs
+        None => false, // do not block if tab count could not be reliably determined
     }
 }
 
@@ -667,16 +667,27 @@ pub fn is_browser_tabs_blocked() -> bool {
     false
 }
 
-/// Spawns a lightweight watcher (checking every 750ms) for foreground browser tabs
+/// Spawns a lightweight watcher for foreground browser tabs with debounce
 pub fn spawn_browser_tabs_watcher(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut last_blocked = false;
+        let mut last_emitted = false;
+        let mut pending_candidate = false;
+        let mut candidate_streak: u8 = 0;
         loop {
-            std::thread::sleep(Duration::from_millis(750));
-            let blocked = is_browser_tabs_blocked();
-            if blocked != last_blocked {
-                last_blocked = blocked;
-                let _ = app.emit_to(WINDOW_LABEL, "browser-tabs-blocked", blocked);
+            std::thread::sleep(Duration::from_millis(400));
+            let raw_blocked = is_browser_tabs_blocked();
+
+            if raw_blocked == pending_candidate {
+                candidate_streak = candidate_streak.saturating_add(1);
+            } else {
+                pending_candidate = raw_blocked;
+                candidate_streak = 1;
+            }
+
+            // Require 2 consecutive checks (~800ms) of consistent state before emitting change
+            if candidate_streak >= 2 && pending_candidate != last_emitted {
+                last_emitted = pending_candidate;
+                let _ = app.emit_to(WINDOW_LABEL, "browser-tabs-blocked", last_emitted);
             }
         }
     });
@@ -692,6 +703,21 @@ pub fn spawn_battery_watcher(app: AppHandle) {
             if status != last_status {
                 last_status = status;
                 let _ = app.emit_to(WINDOW_LABEL, "battery-status", status);
+            }
+        }
+    });
+}
+
+/// Spawns a watcher checking connected bluetooth devices every 3 seconds
+pub fn spawn_bluetooth_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut last_status = platform::bluetooth_status();
+        loop {
+            std::thread::sleep(Duration::from_millis(3000));
+            let status = platform::bluetooth_status();
+            if status != last_status {
+                last_status = status.clone();
+                let _ = app.emit_to(WINDOW_LABEL, "bluetooth-status", status);
             }
         }
     });

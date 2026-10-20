@@ -38,6 +38,13 @@ export interface BatteryStatus {
   hasBattery: boolean;
 }
 
+export interface BluetoothStatus {
+  connected: boolean;
+  name: string;
+  level: number | null;
+  deviceType: string;
+}
+
 /** The phone link (src-tauri/src/phone_link): how it is, never its secrets. */
 export interface PhoneLinkStatus {
   enabled: boolean;
@@ -261,6 +268,8 @@ export const Bridge = {
   browserTabsBlocked: () => call<boolean>("browser_tabs_blocked"),
   /** Laptop battery and charging status */
   batteryStatus: () => call<BatteryStatus>("battery_status"),
+  /** Connected Bluetooth device status */
+  bluetoothStatus: () => call<BluetoothStatus>("bluetooth_status"),
 
   /** Displays the island can be pinned to: `key` is what `settings.screen` stores. */
   listMonitors: () => call<{ key: string; label: string }[]>("list_monitors"),
