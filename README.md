@@ -37,7 +37,7 @@
 
 | Version | Release Date | Platform | Status | Highlights & Changes |
 | :---: | :---: | :---: | :---: | :--- |
-| **v0.5.5** | **Oct 2026** | **Windows, Android** | **Latest Stable** | • **New Mascot App Logo**: Identitas visual maskot baru di seluruh icon desktop & installer.<br/>• **Pomodoro Focus Timer**: Mode timer fokus 25m & istirahat 5m dengan countdown ring, controls, dan navigasi carousel.<br/>• **Interactive TodoList**: Manajemen task dengan checklist penyelesaian realtime, counter kemajuan harian, dan persistensi otomatis.<br/>• **Logic Chrome auto-minimize saat tab $\ge 3$**: Otomatis minimize ke slim capsule bar jika tab $\ge 3$; tetap standby jika $\le 2$ tab.<br/>• **Optimasi Performa & Memori**: Cache UI Automation untuk browser title, pembersihan loop polling, dan pengurangan CPU footprint.<br/>• **Integrasi Google Antigravity**: Kirim prompt langsung ke session aktif Antigravity dari PC atau HP via `/antigravity` & `/agy`.<br/>• **Spotify Lyrics**: Lirik tersinkronisasi realtime dengan timestamp musik.<br/>• **Online MCP Library**: Hub & installer tool MCP daring. |
+| **v0.5.5** | **Oct 2026** | **Windows, Android** | **Latest Stable** | • **Bluetooth Notch Banner & Popup**: Deteksi otomatis perangkat Bluetooth (Classic & BLE seperti TWS, Earbuds, Headphones) via WinRT, battery ring visualizer, audio glow indicator, serta popup hold 5 detik.<br/>• **Redesigned TodoList Card**: Circular SVG Progress Ring (54px), kalkulasi kemajuan tugas realtime, status cerdas (*Remaining Tasks* / *All Done! 🎉*), tombol navigasi `<` `>` vertikal seimbang di tengah, dan layout bebas pemotongan/clipping.<br/>• **Optimasi RAM & Performa Ekstrem**: V8 heap cap 128MB, Win32 Working Set Trimming otomatis saat idle/hidden, cursor poll throttling 30Hz, dan Mochi RAF throttling saat bot tidak terlihat.<br/>• **New Mascot App Logo**: Identitas visual maskot baru di seluruh icon desktop, tray, & installer.<br/>• **Pomodoro Focus Timer**: Mode timer fokus 25m & istirahat 5m dengan countdown ring, controls, dan navigasi carousel.<br/>• **Logic Chrome auto-minimize saat tab $\ge 3$**: Otomatis minimize ke slim capsule bar jika tab $\ge 3$; tetap standby jika $\le 2$ tab.<br/>• **Integrasi Google Antigravity**: Kirim prompt langsung ke session aktif Antigravity dari PC atau HP via `/antigravity` & `/agy`.<br/>• **Spotify Lyrics**: Lirik tersinkronisasi realtime dengan timestamp musik.<br/>• **Online MCP Library**: Hub & installer tool MCP daring. |
 | **v0.5.0** | Oct 2026 | Windows | Stable | Penambahan Dynamic Island format Vivo Y28, Spotify widget, Phone Link v2, charging status banner. |
 | **v0.4.0** | Sep 2026 | macOS, Windows | Legacy | Integrasi Flow Dictation, Parakeet speech-to-text offline, audio call recorder. |
 | **v0.2.0** | Aug 2026 | Android, Windows | Legacy | Inisiasi Phone Link TLS server dan aplikasi Android pendamping. |
@@ -58,6 +58,7 @@ flowchart LR
     subgraph Core["⚡ Desktop Core (Tauri v2 + Rust)"]
         Tauri["Tauri 2 Runtime"]
         Win32["Win32 API & UI Automation"]
+        WinRT["WinRT Bluetooth Classic & BLE"]
         MediaSessions["Windows Media Transports"]
         AgentAPI["Antigravity Agent API Bridge"]
     end
@@ -72,9 +73,9 @@ flowchart LR
     Core <--> Mobile
 ```
 
-- **Core & Runtime**: [Rust 2021](https://www.rust-lang.org/) + [Tauri v2](https://tauri.app/) (Arsitektur native sangat ringan, konsumsi RAM < 45 MB).
+- **Core & Runtime**: [Rust 2021](https://www.rust-lang.org/) + [Tauri v2](https://tauri.app/) (Arsitektur native ultra-ringan dengan V8 heap cap dan working set memory trimmer).
 - **Frontend**: TypeScript, Vite 6, HTML5 Canvas Rendering Engine (60 FPS smooth physics).
-- **Windows Integration**: Windows UI Automation (COM), Windows System Media Transport Controls (SMTC), Direct Win32 Window Positioning.
+- **Windows Integration**: Windows Runtime (WinRT) Bluetooth & BLE Device Information, Windows UI Automation (COM), Windows System Media Transport Controls (SMTC), Direct Win32 Window Positioning.
 - **Android App**: Kotlin, Jetpack Compose, Android Foreground Service, Coroutines, OkHttp TLS.
 - **AI & Protocol**: Google Antigravity Language Server Native CLI Protocol, Model Context Protocol (MCP), WebSocket Secure (WSS).
 
@@ -87,46 +88,62 @@ flowchart LR
 - Penempatan cutout kamera depan simetris dengan jarak 0.5 cm dari bezel atas.
 - Transisi fluida antara mode **Hidden (Slim Capsule)**, **Compact**, dan **Expanded**.
 
-### 2. 🌐 Smart Browser Tab Minimizer ($\ge 3$ Tabs)
+### 2. 🎧 Bluetooth Connected Banner & Popup Notification
+- Deteksi otomatis perangkat Bluetooth yang terhubung (Bluetooth Classic & Bluetooth Low Energy seperti AirPods, TWS Earbuds, Headphones, Headset, dan Smartphone).
+- Menampilkan notch banner khusus Bluetooth (340 $\times$ 50 px) dengan:
+  - **Battery Ring Progress**: Indikator persentase daya baterai melingkar dinamis.
+  - **Device Name & Type**: Menampilkan nama perangkat Bluetooth dan klasifikasi jenisnya.
+  - **Audio Glow & Headphone Badge**: Visualisasi status audio aktif dengan aksen visual estetis.
+- **Auto Popup Hold**: Menampilkan notifikasi banner selama 5 detik saat perangkat baru terhubung meskipun dalam mode auto-minimize.
+
+### 3. 🌐 Smart Browser Tab Minimizer ($\ge 3$ Tabs)
 - Saat Google Chrome, Microsoft Edge, Brave, atau browser lain aktif di layar penuh:
   - **Tab $\ge 3$**: NexIsland otomatis mengecil menjadi *ultra-slim capsule notch* sehingga tab browser Anda tidak tertutup sama sekali dan tetap dapat diakses.
   - **Tab $\le 2$**: NexIsland tetap siaga (*standby*) di atas tanpa menghalangi navigasi.
   - Cukup arahkan kursor ke kapsul untuk langsung membuka kembali pulau.
 - Dilengkapi sistem **Title & HWND Caching** yang meminimalisir polling UI Automation dan menghemat 95% resource CPU.
 
-### 3. 🤖 Integrasi Google Antigravity & AI Agent (PC & HP)
+### 4. ⚡ Efisiensi Memori Ekstrem & Pengoptimalan RAM
+- **V8 Heap Capping**: Membatasi penggunaan memori V8 Chromium WebView2 (`--max-old-space-size=128`) untuk memicu GC lebih awal tanpa memakan memori berlebih.
+- **Win32 Working Set Trimming**: Pembersihan otomatis memori fisik ke OS Windows saat island berada dalam status idle/tersembunyi.
+- **Throttled Polling**: Frekuensi polling kursor diturunkan dari 60 Hz menjadi 30 Hz saat collapsed untuk menghemat siklus CPU.
+- **Smart RAF Suspension**: Render canvas Mochi dihentikan saat bot tertutup banner Bluetooth/Charging atau saat pulau tersembunyi.
+
+### 5. 🤖 Integrasi Google Antigravity & AI Agent (PC & HP)
 - Kirim perintah/prompt langsung ke **sesi aktif Google Antigravity IDE** yang sedang berjalan di komputer.
 - **Dukungan Perintah**: Gunakan slash command `/antigravity <perintah>` atau alias `/agy <perintah>` dari chat Windows atau dari HP via Phone Link.
 - Tersedia pilihan provider **Google Antigravity** di Model Selector.
 - Respon konfirmasi Markdown yang memuat status sesi, workspace, dan ringkasan eksekusi prompt.
 
-### 4. 🎵 Spotify Widget dengan Lirik Realtime
+### 6. ⏱️ Pomodoro Focus Timer
+- Mode fokus produktivitas dengan timer 25 menit (Focus Time) dan istirahat 5 menit (Short Break).
+- Glowing red circular ring badge dengan digital countdown besar, tombol play/pause cepat, dan reset.
+- Live system date & time (`Tue 20 Oct 2026 20:40`) serta transisi mulus ke TodoList.
+
+### 7. ✅ Interactive TodoList Card dengan Circular SVG Progress Ring
+- **Circular SVG Progress Ring**: Visualisasi melingkar 54px dengan stroke hijau `#22c55e` yang mencerminkan rasio tugas terselesaikan secara realtime.
+- **Smart Status Tracker**: Menampilkan informasi *Remaining Tasks* serta ucapan selamat *All Done! 🎉* saat semua task rampung.
+- **Tindakan Cepat**: Tombol berdampingan `+ Add` untuk menambah tugas baru dan `✕ Clear` untuk menghapus task yang sudah selesai.
+- **Navigasi Kartu Presisi**: Tombol navigasi `<` dan `>` vertikal seimbang di tengah kartu tanpa pemotongan tata letak.
+- Checklist pill interaktif dengan animasi strikethrough dan auto-save ke `localStorage`.
+
+### 8. 🎵 Spotify Widget dengan Lirik Realtime
 - Deteksi otomatis lagu yang sedang diputar di Spotify Desktop.
 - Album art cover, judul lagu, musisi, progress bar interaktif, kontrol playback (Play, Pause, Next, Prev, Shuffle, Loop).
 - **Sinkronisasi Lirik (LRC)**: Tampilkan lirik musik yang otomatis berjalan mengikuti detik lagu.
 
-### 5. ⏱️ Pomodoro Focus Timer
-- Mode fokus produktivitas dengan timer 25 menit (Focus Time) dan istirahat 5 menit (Short Break).
-- Glowing red circular ring badge dengan digital countdown besar, tombol play/pause cepat, dan reset.
-- Live system date & time (`Mon 19 Oct 2026 09:55`) serta transisi mulus ke TodoList.
-
-### 6. ✅ Interactive TodoList Card
-- Monitor kemajuan tugas harian secara langsung dengan tracker `Task Done Today` (misal 4/5 tugas selesai).
-- Tambahkan tugas baru via input interaktif cepat `+ Add Task` dan bersihkan tugas selesai dengan `✎ Clear Done`.
-- Checklist pill interaktif dengan animasi strikethrough dan auto-save ke `localStorage`.
-
-### 7. 📝 Notes & Working Alarm System
+### 9. 📝 Notes & Working Alarm System
 - **Notes Tab**: Simpan catatan cepat, checklist to-do, dan snippet tanpa perlu membuka aplikasi teks terpisah.
 - **Alarm Bekerja**: Pasang alarm waktu nyata dengan audio alert yang berbunyi tepat waktu saat sesi coding Anda selesai.
 
-### 8. 📱 Phone Link (Koneksi Ponsel Android nirkabel)
+### 10. 📱 Phone Link (Koneksi Ponsel Android nirkabel)
 - Hubungkan HP Android ke PC via jaringan lokal (Wi-Fi) dengan enkripsi TLS mandiri.
 - Notifikasi alert AI coding, persetujuan tool (approval), chat ke LLM, dan trigger prompt ke Antigravity langsung dari ranjang atau saat jauh dari meja kerja.
 
-### 9. 🔋 Real-Time Battery & Charging Status
+### 11. 🔋 Real-Time Battery & Charging Status
 - Visualisasi status baterai laptop secara estetis dengan indikator ring melingkar hijau dan persentase numerik saat perangkat diisi daya.
 
-### 10. 🔌 Online MCP Library & Multi-Provider LLM
+### 12. 🔌 Online MCP Library & Multi-Provider LLM
 - Hub MCP terintegrasi untuk mencari, mengunduh, dan mengaktifkan MCP tools langsung ke ekosistem coding.
 - Mendukung Claude (Anthropic), OpenAI (GPT-4o), Google Gemini, OpenRouter, Ollama (Llama/Qwen offline), LM Studio, dan custom server.
 
@@ -154,7 +171,7 @@ Semua paket build siap pakai untuk Windows dan Android tersedia di folder `windo
 3. Hubungkan ke Antigravity atau masukkan API key AI favorit Anda di menu Settings (`Ctrl + ,` atau klik kanan Mochi $\to$ Settings).
 
 ### Menghubungkan ke Ponsel Android:
-1. Pasang `app-debug.apk` di smartphone Android Anda.
+1. Pasang `NexIsland-phone-v0.5.5.apk` di smartphone Android Anda.
 2. Buka menu **Phone Link** di NexIsland Desktop dan scan QR code atau masukkan kode pairing dari aplikasi HP.
 3. Chat dan kirim perintah Antigravity langsung dari ponsel!
 
@@ -163,4 +180,4 @@ Semua paket build siap pakai untuk Windows dan Android tersedia di folder `windo
 ## 📜 Lisensi & Hak Cipta
 - Kode sumber dirilis di bawah lisensi [MIT License](LICENSE).
 - Dikembangkan & dioptimalkan untuk performa tinggi, efisiensi memori, dan fleksibilitas multitasking.
-- Thanks To Coucou
+- Special thanks to Coucou original foundation.
