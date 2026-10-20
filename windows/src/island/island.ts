@@ -76,6 +76,7 @@ export class Island {
   private bluetoothTitle!: HTMLElement;
   private bluetoothSub!: HTMLElement;
   private bluetoothRight!: HTMLElement;
+  private bluetoothPopupTimer: number | null = null;
 
   private header!: ViewHost;
   private views!: Map<IslandViewName, ViewHost>;
@@ -210,6 +211,22 @@ export class Island {
       if (this.fsm.state === "hidden") {
         this.fsm.reveal();
       }
+      // Hold open for 5 seconds as a popup notification even if tabs are blocked
+      this.fsm.pinned = true;
+      if (this.bluetoothPopupTimer != null) {
+        window.clearTimeout(this.bluetoothPopupTimer);
+      }
+      this.bluetoothPopupTimer = window.setTimeout(() => {
+        this.fsm.pinned = false;
+        this.bluetoothPopupTimer = null;
+        if (this.fsm.islandBehavior === "auto_minimize_tabs") {
+          void Bridge.browserTabsBlocked().then((blocked) => {
+            if (blocked && this.fsm.state !== "hidden" && !this.wasInIsland) {
+              this.fsm.forceHidden();
+            }
+          });
+        }
+      }, 5000);
     }
     this.animateGeometry(false);
     State.notify();

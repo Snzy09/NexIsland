@@ -3,6 +3,7 @@ import { ICONS } from "./icons";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { formatLiveDate } from "./pomodoro";
+import { t } from "../i18n/i18n";
 import type { ViewActions, ViewHost } from "./views";
 
 export interface TodoItem {
@@ -64,25 +65,57 @@ export function buildTodoList(actions: ViewActions): ViewHost {
   );
 
   const leftNavBtn = h("button", {
-    class: "pomo-nav-btn", title: "Previous Card (Pomodoro)",
+    class: "pomo-nav-btn todo-nav-btn", title: "Previous Card (Pomodoro)",
     onclick: () => { actions.blip(); actions.setView("pomodoro"); },
   }, svg(ICONS.chevronLeft, 14));
 
   const rightNavBtn = h("button", {
-    class: "pomo-nav-btn", title: "Next Card (Notes)",
+    class: "pomo-nav-btn todo-nav-btn", title: "Next Card (Notes)",
     onclick: () => { actions.blip(); actions.setView("note"); },
   }, svg(ICONS.chevronRight, 14));
 
-  const countDisplay = h("div", { class: "todo-count", text: "4/5" });
+  // Circular progress ring
+  const ringSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  ringSvg.setAttribute("class", "todo-progress-svg");
+  ringSvg.setAttribute("viewBox", "0 0 54 54");
+
+  const trackCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  trackCircle.setAttribute("cx", "27");
+  trackCircle.setAttribute("cy", "27");
+  trackCircle.setAttribute("r", "22");
+  trackCircle.setAttribute("fill", "none");
+  trackCircle.setAttribute("stroke", "rgba(255, 255, 255, 0.08)");
+  trackCircle.setAttribute("stroke-width", "4");
+
+  const progressCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  progressCircle.setAttribute("cx", "27");
+  progressCircle.setAttribute("cy", "27");
+  progressCircle.setAttribute("r", "22");
+  progressCircle.setAttribute("fill", "none");
+  progressCircle.setAttribute("stroke", "#22c55e");
+  progressCircle.setAttribute("stroke-width", "4");
+  progressCircle.setAttribute("stroke-linecap", "round");
+  progressCircle.setAttribute("stroke-dasharray", "138.23");
+  progressCircle.setAttribute("stroke-dashoffset", "138.23");
+  progressCircle.style.transform = "rotate(-90deg)";
+  progressCircle.style.transformOrigin = "50% 50%";
+  progressCircle.style.transition = "stroke-dashoffset 0.35s ease";
+
+  ringSvg.append(trackCircle, progressCircle);
+
+  const countDisplay = h("div", { class: "todo-ring-center-text", text: "0/0" });
+  const ringWrap = h("div", { class: "todo-ring-wrap" }, ringSvg as unknown as HTMLElement, countDisplay);
   const countSub = h("div", { class: "todo-count-sub", text: "Task Done Today" });
 
   const addTaskBtn = h("button", {
-    class: "todo-action-btn",
+    class: "todo-action-btn todo-add-btn",
+    title: "Add a new task",
     onclick: () => { actions.blip(); showInputRow(); },
-  }, h("span", { text: "+" }), h("span", { text: "Add Task" }));
+  }, h("span", { text: "+" }), h("span", { text: t("Add") }));
 
   const editTaskBtn = h("button", {
-    class: "todo-action-btn",
+    class: "todo-action-btn todo-clear-btn",
+    title: "Clear completed tasks",
     onclick: () => {
       actions.blip();
       if (todos.some((t) => t.completed)) {
@@ -90,12 +123,13 @@ export function buildTodoList(actions: ViewActions): ViewHost {
         saveTodos(todos);
         renderTasks();
         syncStats();
+        Sound.play("trash");
       }
     },
-  }, h("span", { text: "✎" }), h("span", { text: "Clear Done" }));
+  }, h("span", { text: "✕" }), h("span", { text: t("Clear") }));
 
   const leftCol = h("div", { class: "todo-left-col" },
-    countDisplay, countSub,
+    ringWrap, countSub,
     h("div", { class: "todo-actions-row" }, addTaskBtn, editTaskBtn));
 
   const taskListEl = h("div", { class: "todo-task-list" });
@@ -103,7 +137,7 @@ export function buildTodoList(actions: ViewActions): ViewHost {
   const inputField = h("input", {
     type: "text",
     class: "todo-new-input",
-    placeholder: "Type a task & press Enter...",
+    placeholder: "Add task & press Enter...",
   }) as HTMLInputElement;
 
   inputField.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -155,8 +189,26 @@ export function buildTodoList(actions: ViewActions): ViewHost {
   }
 
   function syncStats() {
+    const total = todos.length;
     const done = todos.filter((t) => t.completed).length;
-    countDisplay.textContent = `${done}/${todos.length}`;
+    countDisplay.textContent = total > 0 ? `${done}/${total}` : "0";
+
+    const circumference = 138.23;
+    if (total === 0) {
+      countSub.textContent = "No Tasks";
+      progressCircle.style.strokeDashoffset = `${circumference}`;
+    } else if (done === total) {
+      countSub.textContent = "All Done! 🎉";
+      progressCircle.style.strokeDashoffset = "0";
+    } else {
+      const remaining = total - done;
+      countSub.textContent = `${remaining} Remaining`;
+      const ratio = done / total;
+      const offset = circumference * (1 - ratio);
+      progressCircle.style.strokeDashoffset = `${offset}`;
+    }
+
+    editTaskBtn.classList.toggle("disabled", done === 0);
   }
 
   function renderTasks() {

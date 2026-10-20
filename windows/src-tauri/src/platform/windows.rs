@@ -723,9 +723,14 @@ pub struct BluetoothStatus {
 }
 
 pub fn bluetooth_status() -> BluetoothStatus {
-    if let Ok(status) = winrt_bluetooth_status() {
-        if status.connected {
-            return status;
+    match winrt_bluetooth_status() {
+        Ok(status) => {
+            if status.connected {
+                return status;
+            }
+        }
+        Err(e) => {
+            crate::log::line(format!("[bluetooth] winrt_bluetooth_status failed: {:?}", e));
         }
     }
 
@@ -733,61 +738,125 @@ pub fn bluetooth_status() -> BluetoothStatus {
 }
 
 fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
-    use windows::core::{Interface, HSTRING};
+    use windows::core::HSTRING;
+    use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothDevice, BluetoothLEDevice};
     use windows::Devices::Enumeration::DeviceInformation;
-    use windows::Foundation::IPropertyValue;
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
-    let filter = HSTRING::from("System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cdb3-4642-bbd1-63809e077697}\" AND System.Devices.Aep.IsConnected:=System.StructuredQueryType.Boolean#True");
-    let async_op = DeviceInformation::FindAllAsyncAqsFilter(&filter)?;
-    let collection = async_op.get()?;
-    let count = collection.Size()?;
+    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
 
-    for i in 0..count {
-        if let Ok(item) = collection.GetAt(i) {
-            let name = item.Name().unwrap_or_default().to_string();
-            if name.is_empty() || name == "Unknown" {
-                continue;
-            }
-
-            let mut level = None;
-            if let Ok(props) = item.Properties() {
-                let key1 = HSTRING::from("{104ea319-6ee2-4701-bd47-8ddbf425bbe5} 2");
-                let key2 = HSTRING::from("System.Devices.BatteryPercent");
-                if let Ok(inspectable) = props.Lookup(&key1).or_else(|_| props.Lookup(&key2)) {
-                    if let Ok(pv) = inspectable.cast::<IPropertyValue>() {
-                        if let Ok(v) = pv.GetUInt8() {
-                            level = Some(v.min(100));
-                        } else if let Ok(v) = pv.GetInt32() {
-                            level = Some((v.clamp(0, 100)) as u8);
+    // 1. Check Classic Bluetooth connected devices
+    if let Ok(selector) = BluetoothDevice::GetDeviceSelectorFromConnectionStatus(BluetoothConnectionStatus::Connected) {
+        if let Ok(op) = DeviceInformation::FindAllAsyncAqsFilter(&selector) {
+            if let Ok(collection) = op.get() {
+                let count = collection.Size().unwrap_or(0);
+                for i in 0..count {
+                    if let Ok(item) = collection.GetAt(i) {
+                        let name = item.Name().unwrap_or_default().to_string();
+                        if !name.is_empty() && name != "Unknown" {
+                            let level = extract_battery_level(&item);
+                            let device_type = classify_bt_device(&name);
+                            return Ok(BluetoothStatus {
+                                connected: true,
+                                name,
+                                level,
+                                device_type,
+                            });
                         }
                     }
                 }
             }
+        }
+    }
 
-            let lower = name.to_lowercase();
-            let device_type = if lower.contains("bud")
-                || lower.contains("pod")
-                || lower.contains("headphone")
-                || lower.contains("headset")
-                || lower.contains("ear")
-                || lower.contains("tws")
-                || lower.contains("air")
-                || lower.contains("audio")
-            {
-                "headphones".to_string()
-            } else {
-                "audio".to_string()
-            };
+    // 2. Check BLE (Bluetooth Low Energy) connected devices
+    if let Ok(selector) = BluetoothLEDevice::GetDeviceSelectorFromConnectionStatus(BluetoothConnectionStatus::Connected) {
+        if let Ok(op) = DeviceInformation::FindAllAsyncAqsFilter(&selector) {
+            if let Ok(collection) = op.get() {
+                let count = collection.Size().unwrap_or(0);
+                for i in 0..count {
+                    if let Ok(item) = collection.GetAt(i) {
+                        let name = item.Name().unwrap_or_default().to_string();
+                        if !name.is_empty() && name != "Unknown" {
+                            let level = extract_battery_level(&item);
+                            let device_type = classify_bt_device(&name);
+                            return Ok(BluetoothStatus {
+                                connected: true,
+                                name,
+                                level,
+                                device_type,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-            return Ok(BluetoothStatus {
-                connected: true,
-                name,
-                level,
-                device_type,
-            });
+    // 3. Fallback: Query AEP with corrected Windows Bluetooth Classic & BLE GUIDs
+    let aep_filter = HSTRING::from(
+        "System.Devices.Aep.IsConnected:=System.StructuredQueryType.Boolean#True \
+         AND (System.Devices.Aep.ProtocolId:=\"{E0CBF06C-CD8B-4647-BB8A-263B43F0F974}\" \
+              OR System.Devices.Aep.ProtocolId:=\"{BB7BB05E-5972-42B5-94FC-76EAA7084D49}\")",
+    );
+    if let Ok(op) = DeviceInformation::FindAllAsyncAqsFilter(&aep_filter) {
+        if let Ok(collection) = op.get() {
+            let count = collection.Size().unwrap_or(0);
+            for i in 0..count {
+                if let Ok(item) = collection.GetAt(i) {
+                    let name = item.Name().unwrap_or_default().to_string();
+                    if !name.is_empty() && name != "Unknown" {
+                        let level = extract_battery_level(&item);
+                        let device_type = classify_bt_device(&name);
+                        return Ok(BluetoothStatus {
+                            connected: true,
+                            name,
+                            level,
+                            device_type,
+                        });
+                    }
+                }
+            }
         }
     }
 
     Ok(BluetoothStatus::default())
+}
+
+fn extract_battery_level(item: &windows::Devices::Enumeration::DeviceInformation) -> Option<u8> {
+    use windows::core::{Interface, HSTRING};
+    use windows::Foundation::IPropertyValue;
+
+    if let Ok(props) = item.Properties() {
+        let key1 = HSTRING::from("{104ea319-6ee2-4701-bd47-8ddbf425bbe5} 2");
+        let key2 = HSTRING::from("System.Devices.BatteryPercent");
+        if let Ok(inspectable) = props.Lookup(&key1).or_else(|_| props.Lookup(&key2)) {
+            if let Ok(pv) = inspectable.cast::<IPropertyValue>() {
+                if let Ok(v) = pv.GetUInt8() {
+                    return Some(v.min(100));
+                } else if let Ok(v) = pv.GetInt32() {
+                    return Some((v.clamp(0, 100)) as u8);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn classify_bt_device(name: &str) -> String {
+    let lower = name.to_lowercase();
+    if lower.contains("bud")
+        || lower.contains("pod")
+        || lower.contains("headphone")
+        || lower.contains("headset")
+        || lower.contains("ear")
+        || lower.contains("tws")
+        || lower.contains("air")
+        || lower.contains("audio")
+    {
+        "headphones".to_string()
+    } else {
+        "audio".to_string()
+    }
 }
 

@@ -3656,69 +3656,120 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 
 /* ── TodoList Card Specifics ─────────────────────────────────────────────────── */
 
+.todo-card {
+  padding: 8px 14px 8px 14px;
+}
+
 .todo-middle-row {
-  align-items: flex-start;
-  gap: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.todo-nav-btn {
+  align-self: center;
+  flex-shrink: 0;
 }
 
 .todo-left-col {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  width: 130px;
+  align-items: center;
+  justify-content: center;
+  width: 135px;
   flex-shrink: 0;
-  padding-left: 4px;
+  text-align: center;
+  padding: 0 4px;
 }
 
-.todo-count {
-  font-size: 34px;
+.todo-ring-wrap {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.todo-progress-svg {
+  width: 54px;
+  height: 54px;
+  transform: rotate(0deg);
+}
+
+.todo-ring-center-text {
+  position: absolute;
+  font-size: 13px;
   font-weight: 800;
-  line-height: 1;
   color: #fff;
   letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .todo-count-sub {
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: #9ca3af;
-  margin-top: 3px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  white-space: nowrap;
 }
 
 .todo-actions-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   width: 100%;
 }
 
 .todo-action-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: #18191d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  justify-content: center;
+  gap: 4px;
+  background: #18191f;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: #e5e7eb;
-  padding: 4px 10px;
-  border-radius: 14px;
+  padding: 4px 9px;
+  border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .todo-action-btn:hover {
-  background: #24262c;
+  background: #242730;
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
+  transform: translateY(-1px);
+}
+
+.todo-add-btn:hover {
+  border-color: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.25);
+}
+
+.todo-action-btn.disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
 }
 
 .todo-right-col {
   flex: 1;
   display: flex;
   flex-direction: column;
-  max-height: 98px;
+  min-width: 0;
+  max-height: 120px;
   overflow: hidden;
 }
 
@@ -3727,15 +3778,19 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+  background: #121316;
+  border: 1px solid rgba(34, 197, 94, 0.6);
+  border-radius: 12px;
+  padding: 3px 8px;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.15);
 }
 
 .todo-new-input {
   flex: 1;
-  background: #121316;
-  border: 1px solid #22c55e;
-  border-radius: 12px;
+  background: transparent;
+  border: none;
   color: #fff;
-  padding: 5px 10px;
+  padding: 3px 0;
   font-size: 11.5px;
   outline: none;
 }
@@ -3744,8 +3799,14 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   background: none;
   border: none;
   color: #9ca3af;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.todo-input-cancel:hover {
+  color: #fff;
 }
 
 .todo-task-list {
@@ -3753,7 +3814,7 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   flex-direction: column;
   gap: 5px;
   overflow-y: auto;
-  max-height: 94px;
+  max-height: 115px;
   padding-right: 4px;
 }
 
@@ -3766,14 +3827,18 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 }
 
 .todo-task-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 2px;
+}
+
+.todo-task-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .todo-empty-hint {
   font-size: 11.5px;
   color: #6b7280;
-  padding: 10px 0;
+  padding: 24px 0;
   text-align: center;
 }
 
@@ -3782,49 +3847,53 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: #0f291e;
-  border: 1px solid #166534;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  padding: 5px 10px;
+  padding: 6px 10px;
   transition: all 0.15s ease;
+  cursor: pointer;
 }
 
 .todo-item-pill:hover {
-  background: #133326;
-  border-color: #22c55e;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(34, 197, 94, 0.35);
 }
 
 .todo-item-pill.completed {
-  opacity: 0.85;
+  opacity: 0.75;
+  background: rgba(34, 197, 94, 0.04);
+  border-color: rgba(34, 197, 94, 0.15);
 }
 
 .todo-check-circle {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1.5px solid #22c55e;
   background: transparent;
   color: transparent;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s ease;
+  transition: all 0.18s ease;
 }
 
 .todo-check-circle.completed {
   background: #22c55e;
   color: #000;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
 }
 
 .todo-item-text {
   flex: 1;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
-  color: #ffffff;
+  color: #f3f4f6;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3832,19 +3901,18 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 
 .todo-item-text.completed {
   text-decoration: line-through;
-  color: #a7f3d0;
-  opacity: 0.7;
+  color: #9ca3af;
 }
 
 .todo-item-del {
   background: none;
   border: none;
   color: #6b7280;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   padding: 0 4px;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .todo-item-pill:hover .todo-item-del {
