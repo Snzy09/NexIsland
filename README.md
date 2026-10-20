@@ -37,7 +37,7 @@
 
 | Version | Release Date | Platform | Status | Highlights & Changes |
 | :---: | :---: | :---: | :---: | :--- |
-| **v0.5.5** | **Oct 2026** | **Windows, Android** | **Latest Stable** | • **Bluetooth Notch Banner & Popup**: Deteksi otomatis perangkat Bluetooth (Classic & BLE seperti TWS, Earbuds, Headphones) via WinRT, battery ring visualizer, audio glow indicator, serta popup hold 5 detik.<br/>• **Redesigned TodoList Card**: Circular SVG Progress Ring (54px), kalkulasi kemajuan tugas realtime, status cerdas (*Remaining Tasks* / *All Done! 🎉*), tombol navigasi `<` `>` vertikal seimbang di tengah, dan layout bebas pemotongan/clipping.<br/>• **Optimasi RAM & Performa Ekstrem**: V8 heap cap 128MB, Win32 Working Set Trimming otomatis saat idle/hidden, cursor poll throttling 30Hz, dan Mochi RAF throttling saat bot tidak terlihat.<br/>• **New Mascot App Logo**: Identitas visual maskot baru di seluruh icon desktop, tray, & installer.<br/>• **Pomodoro Focus Timer**: Mode timer fokus 25m & istirahat 5m dengan countdown ring, controls, dan navigasi carousel.<br/>• **Logic Chrome auto-minimize saat tab $\ge 3$**: Otomatis minimize ke slim capsule bar jika tab $\ge 3$; tetap standby jika $\le 2$ tab.<br/>• **Integrasi Google Antigravity**: Kirim prompt langsung ke session aktif Antigravity dari PC atau HP via `/antigravity` & `/agy`.<br/>• **Spotify Lyrics**: Lirik tersinkronisasi realtime dengan timestamp musik.<br/>• **Online MCP Library**: Hub & installer tool MCP daring. |
+| **v0.5.5** | **Oct 2026** | **Windows, Android** | **Latest Stable** | • **Visual & Audio Notch Experience**: Live bouncing 4-bar equalizer visualizer di sisi kanan compact notch, lirik mini berjalan (*running lyrics*) tersinkronisasi realtime di notch, serta gesture scroll mouse wheel di atas notch untuk atur Volume & Kecerahan Layar (*Brightness*) dengan HUD toast glassmorphism.<br/>• **Spotify Player UI Overhaul**: Menghapus overlap titik dot pagination yang menabrak slider volume dan membersihkan tata letak card player.<br/>• **Privacy Dots (Webcam & Mic Active + Global Mute)**: Indikator titik hijau (kamera/webcam) & oranye (mikrofon) saat aplikasi aktif menangkap video/audio, deteksi nama aplikasi (Chrome, Zoom, OBS, Teams) via Windows ConsentStore, dan tombol 1-klik Mute Mic global di notch.<br/>• **Live Download Progress Notch**: Pantau unduhan file browser realtime (Chrome, Edge, Firefox, Brave) dengan visualizer kecepatan download (`2.4 MB/s · 45%`), progress ring melingkar, dan notifikasi perayaan otomatis `✓ Unduhan Selesai`.<br/>• **Laptop Battery Charging & Low Battery Alert**: Animasi petir hijau bercahaya saat charger dicolokkan (`Mengisi Daya · {level}%`) dengan auto-popup 5 detik, serta notifikasi peringatan berkedip halus saat baterai $\le 20\%$ (`Baterai Lemah`).<br/>• **Bluetooth Notch Banner & Popup**: Deteksi otomatis perangkat Bluetooth (Classic & BLE seperti TWS, Earbuds, Headphones) via WinRT, battery ring visualizer, audio glow indicator, serta popup hold 5 detik.<br/>• **Redesigned TodoList Card**: Circular SVG Progress Ring (54px), kalkulasi kemajuan tugas realtime, status cerdas (*Remaining Tasks* / *All Done! 🎉*), tombol navigasi `<` `>` vertikal seimbang di tengah, dan layout bebas pemotongan/clipping.<br/>• **Optimasi RAM & Performa Ekstrem**: V8 heap cap 128MB, Win32 Working Set Trimming otomatis saat idle/hidden, cursor poll throttling 30Hz, dan Mochi RAF throttling saat bot tidak terlihat.<br/>• **New Mascot App Logo**: Identitas visual maskot baru di seluruh icon desktop, tray, & installer.<br/>• **Pomodoro Focus Timer**: Mode timer fokus 25m & istirahat 5m dengan countdown ring, controls, dan navigasi carousel.<br/>• **Logic Chrome auto-minimize saat tab $\ge 3$**: Otomatis minimize ke slim capsule bar jika tab $\ge 3$; tetap standby jika $\le 2$ tab.<br/>• **Integrasi Google Antigravity**: Kirim prompt langsung ke session aktif Antigravity dari PC atau HP via `/antigravity` & `/agy`.<br/>• **Online MCP Library**: Hub & installer tool MCP daring. |
 | **v0.5.0** | Oct 2026 | Windows | Stable | Penambahan Dynamic Island format Vivo Y28, Spotify widget, Phone Link v2, charging status banner. |
 | **v0.4.0** | Sep 2026 | macOS, Windows | Legacy | Integrasi Flow Dictation, Parakeet speech-to-text offline, audio call recorder. |
 | **v0.2.0** | Aug 2026 | Android, Windows | Legacy | Inisiasi Phone Link TLS server dan aplikasi Android pendamping. |
@@ -140,10 +140,28 @@ flowchart LR
 - Hubungkan HP Android ke PC via jaringan lokal (Wi-Fi) dengan enkripsi TLS mandiri.
 - Notifikasi alert AI coding, persetujuan tool (approval), chat ke LLM, dan trigger prompt ke Antigravity langsung dari ranjang atau saat jauh dari meja kerja.
 
-### 11. 🔋 Real-Time Battery & Charging Status
-- Visualisasi status baterai laptop secara estetis dengan indikator ring melingkar hijau dan persentase numerik saat perangkat diisi daya.
+### 11. 🔋 Real-Time Battery Charging & Low Battery Alert
+- **Charging Animation & Popup**: Saat pengisi daya laptop dicolokkan, notch menampilkan animasi banner bercahaya hijau ala Apple Dynamic Island dengan ikon petir dinamis dan persentase numerik selama 5 detik (`Mengisi Daya · {level}%`).
+- **Low Battery Alert ($\le 20\%$)**: Peringatan otomatis dengan ikon baterai merah berkedip halus dan aksen visual glowing (`Baterai Lemah · Sisa {level}% - Sambungkan Pengisi Daya`) untuk mengingatkan Anda sebelum laptop kehabisan daya.
 
-### 12. 🔌 Online MCP Library & Multi-Provider LLM
+### 12. 🛡️ Privacy Dots (Webcam & Microphone Active Indicator + Global Mic Mute)
+- **Titik Hijau (Webcam Aktif)**: Titik hijau bercahaya `●` muncul di notch saat aplikasi (Zoom, Google Meet, OBS, Discord, Chrome) mengakses kamera atau webcam.
+- **Titik Oranye (Mikrofon Aktif)**: Titik oranye bercahaya `●` muncul saat ada aplikasi yang sedang mendengarkan atau menggunakan mikrofon.
+- **Deteksi Nama Aplikasi Pintar**: Tooltip hover menampilkan nama aplikasi yang sedang aktif menggunakan kamera/mic (misal: *Kamera aktif (Google Chrome)*).
+- **1-Klik Global Mute Microphone**: Cukup klik titik oranye di notch untuk langsung me-mute / unmute mikrofon sistem Windows secara instan tanpa perlu membuka kontrol mixer.
+
+### 13. 📥 Live Download Progress Notch
+- **Deteksi Otomatis Unduhan Browser**: Memantau file transfer & unduhan aktif di browser favorit (Chrome, Edge, Firefox, Brave, Opera) secara realtime.
+- **Speed & Progress Visualizer**: Menampilkan nama file, kecepatan unduh real-time (misal: `2.4 MB/s · Mengunduh...`), total MB terdownload, serta progress ring melingkar di notch.
+- **Celebration Complete Banner**: Saat file selesai diunduh, notch otomatis memunculkan animasi centang hijau `✓ Unduhan Selesai` dengan audio feedback pop selama 4 detik.
+
+### 14. 🎵 Visual & Audio Notch Experience (Super Estetik)
+- **Live Audio Visualizer Bar di Notch Kecil**: Saat lagu diputar di Spotify / browser, equalizer mini 4-bar berwarna hijau dinamis bergoyang secara real-time di sisi kanan notch dalam mode compact pill, ala Dynamic Island iPhone.
+- **Live Running Lyrics (Lirik Mini Berjalan)**: Satu baris lirik lagu yang sedang aktif mengalir dan berganti secara dinamis dengan animasi slide-in halus di dalam compact notch.
+- **Volume & Brightness Scroll Gesture**: Cukup arahkan kursor ke notch dan gerakkan roda mouse (*scroll*) untuk menaikkan/menurunkan volume suara sistem/Spotify, atau tahan tombol `Shift + Scroll` untuk mengatur kecerahan layar monitor (*Brightness*), lengkap dengan HUD toast glassmorphism yang elegan.
+- **Spotify Player UI Overhaul**: Tampilan Spotify player card dirapikan, menghilangkan tumpukan titik pagination yang sebelumnya menabrak volume slider bar.
+
+### 15. 🔌 Online MCP Library & Multi-Provider LLM
 - Hub MCP terintegrasi untuk mencari, mengunduh, dan mengaktifkan MCP tools langsung ke ekosistem coding.
 - Mendukung Claude (Anthropic), OpenAI (GPT-4o), Google Gemini, OpenRouter, Ollama (Llama/Qwen offline), LM Studio, dan custom server.
 

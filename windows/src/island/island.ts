@@ -2,7 +2,7 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
-import { Bridge, IS_TAURI, onDragDrop, onEvent, type BatteryStatus, type BluetoothStatus } from "../core/bridge";
+import { Bridge, IS_TAURI, onDragDrop, onEvent, type BatteryStatus, type BluetoothStatus, type DownloadStatus, type PrivacyStatus } from "../core/bridge";
 import {
   COMPACT_CHARGING_R,
   COMPACT_BT_R,
@@ -15,7 +15,7 @@ import {
 } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
-import { SPOTIFY_ID, islandDances } from "../core/spotify";
+import { SPOTIFY_ID, Spotify, islandDances } from "../core/spotify";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
@@ -69,6 +69,8 @@ export class Island {
   private chargingTitle!: HTMLElement;
   private chargingSub!: HTMLElement;
   private chargingPercent!: HTMLElement;
+  private batteryPopupTimer: number | null = null;
+  private batteryBannerMode: "charging" | "low" | null = null;
 
   private bluetoothBanner!: HTMLElement;
   private bluetoothRing!: HTMLElement;
@@ -77,6 +79,25 @@ export class Island {
   private bluetoothSub!: HTMLElement;
   private bluetoothRight!: HTMLElement;
   private bluetoothPopupTimer: number | null = null;
+
+  private downloadBanner!: HTMLElement;
+  private downloadProgressCircle!: SVGCircleElement;
+  private downloadTitle!: HTMLElement;
+  private downloadSub!: HTMLElement;
+  private downloadPercent!: HTMLElement;
+  private downloadPopupTimer: number | null = null;
+
+  private privacyContainer!: HTMLElement;
+  private privacyCameraDot!: HTMLElement;
+  private privacyMicDot!: HTMLElement;
+
+  private audioVisualizer!: HTMLElement;
+  private compactLyrics!: HTMLElement;
+  private compactLyricsText!: HTMLElement;
+  private hudToast!: HTMLElement;
+  private hudToastIcon!: HTMLElement;
+  private hudToastVal!: HTMLElement;
+  private hudToastTimer: number | null = null;
 
   private header!: ViewHost;
   private views!: Map<IslandViewName, ViewHost>;
@@ -165,6 +186,21 @@ export class Island {
         State.notify();
       }
     });
+    void onEvent<PrivacyStatus>("privacy-status", (status) => {
+      this.handlePrivacyStatus(status);
+    });
+    void Bridge.privacyStatus().then((status) => {
+      if (status) {
+        State.privacyStatus = status;
+        this.dirty = true;
+      }
+    });
+    void onEvent<DownloadStatus>("download-status", (status) => {
+      this.handleDownloadStatus(status);
+    });
+    void onEvent<string>("download-complete", (filename) => {
+      this.handleDownloadComplete(filename);
+    });
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => {
       this.fsm.greetComplete();
@@ -173,6 +209,7 @@ export class Island {
     State.subscribe(() => {
       this.dirty = true;
       this.syncIslandBehavior();
+      this.animateGeometry(false);
       this.ensureRunning();
     });
   }
@@ -192,13 +229,94 @@ export class Island {
 
   private handleBatteryStatus(status: BatteryStatus) {
     const wasCharging = State.batteryStatus.charging;
+    const wasLevel = State.batteryStatus.level;
     State.batteryStatus = status;
+
+    // 1. Charger connected event (Image 1 / iOS Dynamic Island popup)
     if (!wasCharging && status.charging) {
       Sound.play("pop");
       if (this.fsm.state === "hidden") {
         this.fsm.reveal();
       }
+      this.batteryBannerMode = "charging";
+      this.fsm.pinned = true;
+      if (this.batteryPopupTimer != null) {
+        window.clearTimeout(this.batteryPopupTimer);
+      }
+      this.batteryPopupTimer = window.setTimeout(() => {
+        this.batteryPopupTimer = null;
+        this.batteryBannerMode = null;
+        this.fsm.pinned = false;
+        this.animateGeometry(true);
+        State.notify();
+      }, 5000);
+    } else if (!status.charging && status.hasBattery && status.level <= 20 && (wasLevel > 20 || wasCharging)) {
+      // 2. Low battery event (<= 20% and not plugged in)
+      Sound.play("pop");
+      if (this.fsm.state === "hidden") {
+        this.fsm.reveal();
+      }
+      this.batteryBannerMode = "low";
+      this.fsm.pinned = true;
+      if (this.batteryPopupTimer != null) {
+        window.clearTimeout(this.batteryPopupTimer);
+      }
+      this.batteryPopupTimer = window.setTimeout(() => {
+        this.batteryPopupTimer = null;
+        this.batteryBannerMode = null;
+        this.fsm.pinned = false;
+        this.animateGeometry(true);
+        State.notify();
+      }, 6000);
     }
+
+    this.animateGeometry(false);
+    State.notify();
+  }
+
+  private handlePrivacyStatus(status: PrivacyStatus) {
+    State.privacyStatus = status;
+    this.dirty = true;
+  }
+
+  private handleDownloadStatus(status: DownloadStatus) {
+    const wasActive = State.downloadStatus.active;
+    State.downloadStatus = status;
+    if (!wasActive && status.active) {
+      if (this.fsm.state === "hidden") {
+        this.fsm.reveal();
+      }
+    }
+    this.animateGeometry(false);
+    State.notify();
+  }
+
+  private handleDownloadComplete(filename: string) {
+    Sound.play("pop");
+    State.downloadCompleteFile = filename;
+    State.downloadStatus = {
+      active: true,
+      filename,
+      speedBytesPerSec: 0,
+      downloadedBytes: 0,
+      totalBytes: null,
+      percent: 100,
+    };
+    if (this.fsm.state === "hidden") {
+      this.fsm.reveal();
+    }
+    this.fsm.pinned = true;
+    if (this.downloadPopupTimer != null) {
+      window.clearTimeout(this.downloadPopupTimer);
+    }
+    this.downloadPopupTimer = window.setTimeout(() => {
+      this.downloadPopupTimer = null;
+      this.fsm.pinned = false;
+      State.downloadCompleteFile = null;
+      State.downloadStatus.active = false;
+      this.animateGeometry(true);
+      State.notify();
+    }, 4500);
     this.animateGeometry(false);
     State.notify();
   }
@@ -439,6 +557,70 @@ export class Island {
     this.bluetoothBanner = h("div", { id: "bluetooth-banner" }, btLeft, this.bluetoothRight);
     this.bluetoothBanner.addEventListener("click", () => this.fsm.click());
 
+    // Download notch banner
+    const dlSvgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dlSvgCircle.setAttribute("cx", "16");
+    dlSvgCircle.setAttribute("cy", "16");
+    dlSvgCircle.setAttribute("r", "14");
+    dlSvgCircle.setAttribute("class", "dl-ring-progress");
+    const dlSvgBg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dlSvgBg.setAttribute("cx", "16");
+    dlSvgBg.setAttribute("cy", "16");
+    dlSvgBg.setAttribute("r", "14");
+    dlSvgBg.setAttribute("class", "dl-ring-bg");
+    const dlSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    dlSvg.setAttribute("viewBox", "0 0 32 32");
+    dlSvg.setAttribute("class", "dl-ring-svg");
+    dlSvg.appendChild(dlSvgBg);
+    dlSvg.appendChild(dlSvgCircle);
+    this.downloadProgressCircle = dlSvgCircle;
+
+    const dlIconInside = h("div", { class: "dl-center-icon" }, svg(ICONS.download, 13, { stroke: 2 }));
+    const dlRing = h("div", { class: "dl-ring-wrap" }, dlSvg as unknown as HTMLElement, dlIconInside);
+
+    this.downloadTitle = h("div", { class: "dl-title" }, "Mengunduh...");
+    this.downloadSub = h("div", { class: "dl-sub" }, "0 KB/s");
+    const dlInfo = h("div", { class: "dl-info" }, this.downloadTitle, this.downloadSub);
+    const dlLeft = h("div", { class: "dl-left" }, dlRing, dlInfo);
+    this.downloadPercent = h("div", { class: "dl-percent" }, "0%");
+
+    this.downloadBanner = h("div", { id: "download-banner" }, dlLeft, this.downloadPercent);
+    this.downloadBanner.addEventListener("click", () => this.fsm.click());
+
+    // Privacy indicator dots (Camera & Mic)
+    this.privacyCameraDot = h("div", { class: "privacy-dot camera", title: "Kamera / Webcam aktif", style: "display: none;" });
+    this.privacyMicDot = h("div", {
+      class: "privacy-dot mic",
+      title: "Mikrofon aktif (Klik untuk mute)",
+      style: "display: none;",
+      onclick: (e: Event) => {
+        e.stopPropagation();
+        void Bridge.toggleMicMute().then((muted) => {
+          State.privacyStatus.micMuted = !!muted;
+          this.dirty = true;
+          State.notify();
+        });
+      },
+    });
+    this.privacyContainer = h("div", { class: "privacy-dots-container" }, this.privacyCameraDot, this.privacyMicDot);
+
+    // Live Audio Visualizer (bouncing equalizer waveform bars)
+    this.audioVisualizer = h("div", { class: "notch-audio-visualizer", title: "Audio Visualizer" },
+      h("span", { class: "eq-bar eq-1" }),
+      h("span", { class: "eq-bar eq-2" }),
+      h("span", { class: "eq-bar eq-3" }),
+      h("span", { class: "eq-bar eq-4" }),
+    );
+
+    // Live compact running lyrics in notch
+    this.compactLyricsText = h("span", { class: "notch-lyric-text" });
+    this.compactLyrics = h("div", { class: "notch-compact-lyrics" }, this.compactLyricsText);
+
+    // Volume / Brightness HUD Toast on Scroll Gesture
+    this.hudToastIcon = h("span", { class: "hud-toast-icon" });
+    this.hudToastVal = h("span", { class: "hud-toast-val" });
+    this.hudToast = h("div", { class: "notch-hud-toast" }, this.hudToastIcon, this.hudToastVal);
+
     this.islandEl = h(
       "div",
       { id: "island" },
@@ -446,10 +628,38 @@ export class Island {
       this.botGlow,
       this.botCanvas,
       this.miniGrid,
+      this.compactLyrics,
+      this.audioVisualizer,
       this.chargingBanner,
       this.bluetoothBanner,
+      this.downloadBanner,
+      this.privacyContainer,
+      this.hudToast,
       this.countdown,
     );
+
+    // Mouse wheel scroll gesture: scroll on notch to adjust Volume or Brightness
+    this.islandEl.addEventListener("wheel", (e: WheelEvent) => {
+      e.preventDefault();
+      const isUp = e.deltaY < 0;
+      const step = isUp ? 4 : -4;
+      if (e.shiftKey) {
+        void Bridge.changeBrightness(step).then((b) => {
+          if (b != null) this.showHudToast("brightness", b);
+        });
+      } else {
+        if (State.spotifyPlaying) {
+          const cur = Spotify.state.volume;
+          const next = Math.max(0, Math.min(100, cur + step));
+          void Bridge.spotifyControl("volume", next);
+          this.showHudToast("volume", next);
+        } else {
+          void Bridge.changeVolume(step).then((v) => {
+            if (v != null) this.showHudToast("volume", v);
+          });
+        }
+      }
+    }, { passive: false });
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     this.greetingCanvas.width = Math.round(EXPANDED_W * dpr);
@@ -459,6 +669,23 @@ export class Island {
 
     this.root.append(this.wakeStrip, this.islandEl);
     this.applyGeometry();
+  }
+
+  private showHudToast(kind: "volume" | "brightness", val: number) {
+    if (this.hudToastTimer != null) {
+      window.clearTimeout(this.hudToastTimer);
+      this.hudToastTimer = null;
+    }
+    const iconName = kind === "volume"
+      ? (val <= 0 ? ICONS.volume0 : val < 33 ? ICONS.volume1 : val < 66 ? ICONS.volume2 : ICONS.volume3)
+      : ICONS.sun;
+    this.hudToastIcon.replaceChildren(svg(iconName, 15, { fill: "#fff" }));
+    this.hudToastVal.textContent = `${Math.round(val)}%`;
+    this.hudToast.style.opacity = "1";
+    this.hudToastTimer = window.setTimeout(() => {
+      this.hudToast.style.opacity = "0";
+      this.hudToastTimer = null;
+    }, 1100);
   }
 
   // ── FSM ─────────────────────────────────────────────────────────────────────
@@ -805,12 +1032,18 @@ export class Island {
       return { w: MINIMIZED_PILL_W, h: MINIMIZED_PILL_H, r: MINIMIZED_PILL_R };
     }
     const isBluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
-    const isChargingCompact = State.mode === "compact" && State.isCharging && !isBluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
-    let { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, isChargingCompact, isBluetoothCompact);
+    const isDownloadCompact = State.mode === "compact" && !isBluetoothCompact && State.downloadStatus.active;
+    const isChargingCompact = State.mode === "compact" && !isBluetoothCompact && !isDownloadCompact &&
+      ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
+    let { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, isChargingCompact, isBluetoothCompact, isDownloadCompact);
     if (State.mode === "expanded" && State.view === "question" && State.pendingApproval?.questions) {
       h = QUESTION_PICKER_H;
     }
-    const r = State.mode === "expanded" ? EXPANDED_CORNER : isBluetoothCompact ? COMPACT_BT_R : isChargingCompact ? COMPACT_CHARGING_R : ROUNDED_CORNER;
+    const isMusicCompact = State.mode === "compact" && !isBluetoothCompact && !isDownloadCompact && !isChargingCompact && State.spotifyPlaying;
+    if (isMusicCompact && State.activeLyricLine) {
+      w = Math.max(w, 320);
+    }
+    const r = State.mode === "expanded" ? EXPANDED_CORNER : (isBluetoothCompact || isDownloadCompact) ? COMPACT_BT_R : isChargingCompact ? COMPACT_CHARGING_R : ROUNDED_CORNER;
     return { w, h, r };
   }
 
@@ -1143,8 +1376,10 @@ export class Island {
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
     const away = State.mochiOnDesktop;
     const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
-    const chargingCompact = State.mode === "compact" && State.isCharging && !bluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
-    const botVisible = !away && !chargingCompact && !bluetoothCompact;
+    const downloadCompact = State.mode === "compact" && !bluetoothCompact && State.downloadStatus.active;
+    const chargingCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact &&
+      ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
+    const botVisible = !away && !chargingCompact && !bluetoothCompact && !downloadCompact;
 
     if (greetingActive) {
       const gctx = this.greetingCanvas.getContext("2d");
@@ -1207,8 +1442,10 @@ export class Island {
     // desktop, he isn't here at all.
     const away = State.mochiOnDesktop;
     const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
-    const chargingCompact = State.mode === "compact" && State.isCharging && !bluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
-    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !away && !chargingCompact && !bluetoothCompact;
+    const downloadCompact = State.mode === "compact" && !bluetoothCompact && State.downloadStatus.active;
+    const chargingCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact &&
+      ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
+    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !away && !chargingCompact && !bluetoothCompact && !downloadCompact;
     this.botCanvas.style.opacity = visible ? "1" : "0";
 
     if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive && !away) {
@@ -1358,10 +1595,13 @@ export class Island {
       }
     }
 
-    // Compact mini grid, charging banner & bluetooth notch banner
+    // Compact mini grid, charging banner, bluetooth banner & download banner
     const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
-    const chargingCompact = State.mode === "compact" && State.isCharging && !bluetoothCompact && (State.settings.chargingStatusInIsland ?? true);
-    const showGrid = State.mode === "compact" && !chargingCompact && !bluetoothCompact;
+    const downloadCompact = State.mode === "compact" && !bluetoothCompact && State.downloadStatus.active;
+    const chargingCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact &&
+      ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
+    const musicCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact && !chargingCompact && State.spotifyPlaying;
+    const showGrid = State.mode === "compact" && !chargingCompact && !bluetoothCompact && !downloadCompact && !musicCompact;
     this.miniGrid.style.opacity = showGrid ? "1" : "0";
     if (showGrid) {
       const others = State.otherTasks.slice(0, 4);
@@ -1390,15 +1630,92 @@ export class Island {
       this.bluetoothBanner.style.display = "none";
     }
 
+    if (downloadCompact) {
+      this.downloadBanner.style.display = "flex";
+      const isComplete = State.downloadCompleteFile != null;
+      if (isComplete) {
+        this.downloadTitle.textContent = "✓ Unduhan Selesai";
+        this.downloadSub.textContent = State.downloadCompleteFile || "";
+        this.downloadPercent.textContent = "100%";
+        this.downloadProgressCircle.style.strokeDashoffset = "0";
+      } else {
+        this.downloadTitle.textContent = State.downloadStatus.filename || "Mengunduh file...";
+        const speed = State.downloadStatus.speedBytesPerSec;
+        let speedStr = "0 KB/s";
+        if (speed > 1024 * 1024) {
+          speedStr = `${(speed / (1024 * 1024)).toFixed(1)} MB/s`;
+        } else if (speed > 1024) {
+          speedStr = `${(speed / 1024).toFixed(0)} KB/s`;
+        }
+        const pct = State.downloadStatus.percent;
+        this.downloadSub.textContent = pct != null ? `${speedStr} · ${pct}%` : `${speedStr} · Mengunduh...`;
+
+        const mbDownloaded = (State.downloadStatus.downloadedBytes / (1024 * 1024)).toFixed(1);
+        this.downloadPercent.textContent = pct != null ? `${pct}%` : `${mbDownloaded} MB`;
+
+        const circumference = 87.96;
+        const progressPct = pct ?? 45;
+        const offset = circumference - (Math.max(0, Math.min(100, progressPct)) / 100) * circumference;
+        this.downloadProgressCircle.style.strokeDashoffset = `${offset}`;
+      }
+    } else {
+      this.downloadBanner.style.display = "none";
+    }
+
     if (chargingCompact) {
       this.chargingBanner.style.display = "flex";
       const lvl = State.batteryStatus.level;
       this.chargingPercent.textContent = `${lvl}%`;
-      const fullyCharged = lvl >= 100;
-      this.chargingTitle.textContent = fullyCharged ? t("Fully Charged") : t("Charging");
-      this.chargingSub.textContent = t("Charger connected");
+      const isLow = this.batteryBannerMode === "low" || (!State.isCharging && lvl <= 20);
+      this.chargingBanner.classList.toggle("low-battery", isLow);
+      if (isLow) {
+        this.chargingTitle.textContent = t("Low Battery");
+        this.chargingSub.textContent = t("Connect charger");
+        this.chargingRing.replaceChildren(svg(ICONS.batteryLow, 15, { fill: "#ef4444" }));
+      } else {
+        const fullyCharged = lvl >= 100;
+        this.chargingTitle.textContent = fullyCharged ? t("Fully Charged") : t("Charging");
+        this.chargingSub.textContent = t("Charger connected");
+        this.chargingRing.replaceChildren(svg(ICONS.bolt, 15, { fill: "#22c55e" }));
+      }
     } else {
       this.chargingBanner.style.display = "none";
+    }
+
+    // Privacy indicator dots
+    const camActive = State.privacyStatus.cameraActive;
+    const micActive = State.privacyStatus.micActive;
+    this.privacyCameraDot.style.display = camActive ? "block" : "none";
+    this.privacyMicDot.style.display = micActive ? "block" : "none";
+    if (camActive) {
+      const apps = State.privacyStatus.activeCameraApps.join(", ");
+      this.privacyCameraDot.title = apps ? `Kamera aktif (${apps})` : "Kamera / Webcam aktif";
+    }
+    if (micActive) {
+      const apps = State.privacyStatus.activeMicApps.join(", ");
+      const muted = State.privacyStatus.micMuted;
+      this.privacyMicDot.classList.toggle("muted", muted);
+      this.privacyMicDot.title = (apps ? `Mikrofon aktif (${apps})` : "Mikrofon aktif") + (muted ? " (Muted - Klik untuk Unmute)" : " (Klik untuk Mute)");
+    }
+
+    // Live Audio Visualizer & Compact Running Lyrics
+    if (musicCompact) {
+      this.audioVisualizer.style.display = "flex";
+      this.audioVisualizer.classList.toggle("paused", !State.spotifyPlaying);
+      if (State.activeLyricLine) {
+        this.compactLyrics.style.display = "flex";
+        if (this.compactLyricsText.textContent !== State.activeLyricLine) {
+          this.compactLyricsText.textContent = State.activeLyricLine;
+          this.compactLyrics.classList.remove("pulse");
+          void this.compactLyrics.offsetWidth;
+          this.compactLyrics.classList.add("pulse");
+        }
+      } else {
+        this.compactLyrics.style.display = "none";
+      }
+    } else {
+      this.audioVisualizer.style.display = "none";
+      this.compactLyrics.style.display = "none";
     }
 
     syncMiniBotStates(State.tasks);

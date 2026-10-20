@@ -821,6 +821,31 @@ fn trim_memory() {
     platform::trim_memory();
 }
 
+#[tauri::command]
+fn privacy_status() -> platform::PrivacyStatus {
+    platform::privacy_status()
+}
+
+#[tauri::command]
+fn toggle_mic_mute() -> bool {
+    platform::toggle_mic_mute()
+}
+
+#[tauri::command]
+fn download_status() -> platform::DownloadStatus {
+    platform::check_download_status()
+}
+
+#[tauri::command]
+fn change_system_volume(delta: i32) -> i32 {
+    platform::change_system_volume(delta)
+}
+
+#[tauri::command]
+fn change_system_brightness(delta: i32) -> i32 {
+    platform::change_system_brightness(delta)
+}
+
 pub fn run() {
     platform::prepare_environment();
     let loaded = settings::load();
@@ -910,6 +935,11 @@ pub fn run() {
             set_paused,
             battery_status,
             bluetooth_status,
+            privacy_status,
+            toggle_mic_mute,
+            download_status,
+            change_system_volume,
+            change_system_brightness,
             trim_memory,
             browser_tabs_blocked,
             shortcuts_status,
@@ -1038,6 +1068,8 @@ pub fn run() {
             island::spawn_browser_tabs_watcher(handle.clone());
             island::spawn_battery_watcher(handle.clone());
             island::spawn_bluetooth_watcher(handle.clone());
+            island::spawn_privacy_watcher(handle.clone());
+            island::spawn_download_watcher(handle.clone());
             island::spawn_memory_trimmer(gate.clone());
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));

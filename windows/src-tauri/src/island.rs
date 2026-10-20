@@ -734,6 +734,49 @@ pub fn spawn_bluetooth_watcher(app: AppHandle) {
     });
 }
 
+/// Spawns a watcher checking microphone / camera activity every 1.5 seconds
+pub fn spawn_privacy_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut last_status = platform::privacy_status();
+        loop {
+            std::thread::sleep(Duration::from_millis(1500));
+            let status = platform::privacy_status();
+            if status != last_status {
+                last_status = status.clone();
+                let _ = app.emit_to(WINDOW_LABEL, "privacy-status", status);
+            }
+        }
+    });
+}
+
+/// Spawns a watcher checking active browser / file downloads every 1 second
+pub fn spawn_download_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut last_bytes: u64 = 0;
+        let mut last_name = String::new();
+        let mut was_active = false;
+        loop {
+            std::thread::sleep(Duration::from_millis(1000));
+            let mut status = platform::check_download_status();
+            if status.active {
+                if status.filename == last_name && status.downloaded_bytes >= last_bytes {
+                    status.speed_bytes_per_sec = status.downloaded_bytes - last_bytes;
+                }
+                last_bytes = status.downloaded_bytes;
+                last_name = status.filename.clone();
+                was_active = true;
+                let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
+            } else if was_active {
+                was_active = false;
+                last_bytes = 0;
+                let completed_name = std::mem::take(&mut last_name);
+                let _ = app.emit_to(WINDOW_LABEL, "download-complete", completed_name);
+                let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
+            }
+        }
+    });
+}
+
 /// Trims physical memory every 60 seconds when the island is collapsed/idle
 pub fn spawn_memory_trimmer(gate: Arc<PollGate>) {
     std::thread::spawn(move || {

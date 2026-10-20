@@ -399,7 +399,6 @@ export function buildSpotifyCard(): SpotifyCardHost {
     progressRow,
     controls,
     lyricsPreview,
-    dotsRow,
   );
   const divider = h("div", { class: "np-pane-divider" });
   divider.style.display = "none";
@@ -479,18 +478,26 @@ export function buildSpotifyCard(): SpotifyCardHost {
           lineElements[i].classList.toggle("active", i === activeLyricIndex);
         }
         if (activeLyricIndex >= 0 && lyricLines[activeLyricIndex]) {
-          lyricsPreviewText.textContent = `♪ ${lyricLines[activeLyricIndex].text}`;
+          const lyricStr = lyricLines[activeLyricIndex].text;
+          lyricsPreviewText.textContent = `♪ ${lyricStr}`;
+          State.activeLyricLine = lyricStr;
         } else {
           lyricsPreviewText.textContent = t("Lyrics");
+          State.activeLyricLine = null;
         }
+        State.notify();
         scrollActiveIntoView();
       }
     } else if (lyricsData?.instrumental) {
       lyricsPreviewText.textContent = `♪ ${t("Instrumental")}`;
+      State.activeLyricLine = `♪ ${t("Instrumental")}`;
+      State.notify();
     } else if (lyricsLoading) {
       lyricsPreviewText.textContent = t("Loading lyrics…");
+      State.activeLyricLine = null;
     } else {
       lyricsPreviewText.textContent = t("Lyrics");
+      State.activeLyricLine = null;
     }
   }
 

@@ -13,7 +13,7 @@ import type { Bindings } from "./shortcuts";
 import { DEFAULT_OUTFIT, type Outfit } from "../mochi/wardrobe";
 import { pillColor } from "./pill-colors";
 import { Spotify, musicPlaying } from "./spotify";
-import type { BatteryStatus, BluetoothStatus } from "./bridge";
+import type { BatteryStatus, BluetoothStatus, DownloadStatus, PrivacyStatus } from "./bridge";
 
 export type AgentSource = "claudeCode" | "n8n" | "agent";
 export type PillBadge = "approval" | "finished" | "error";
@@ -299,6 +299,31 @@ class AppState {
     level: null,
     deviceType: "audio",
   };
+
+  /** Privacy indicators (mic / webcam / mute) */
+  privacyStatus: PrivacyStatus = {
+    micActive: false,
+    cameraActive: false,
+    micMuted: false,
+    activeMicApps: [],
+    activeCameraApps: [],
+  };
+
+  /** Live file/browser download status */
+  downloadStatus: DownloadStatus = {
+    active: false,
+    filename: "",
+    speedBytesPerSec: 0,
+    downloadedBytes: 0,
+    totalBytes: null,
+    percent: null,
+  };
+
+  /** Recently completed download name for celebration banner */
+  downloadCompleteFile: string | null = null;
+
+  /** Active lyric line currently sung for compact notch lyrics ticker */
+  activeLyricLine: string | null = null;
 
   get isCharging(): boolean {
     return this.batteryStatus.charging;

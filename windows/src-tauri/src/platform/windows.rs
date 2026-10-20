@@ -14,8 +14,17 @@ use ::windows::Win32::Foundation::{
 };
 use ::windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use ::windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+use ::windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+use ::windows::Win32::Media::Audio::{
+    eCapture, eConsole, eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
+};
 use ::windows::Win32::System::Com::{
-    CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    COINIT_DISABLE_OLE1DDE,
+};
+use ::windows::Win32::System::Registry::{
+    RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER,
+    KEY_READ,
 };
 use ::windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
@@ -858,5 +867,311 @@ fn classify_bt_device(name: &str) -> String {
     } else {
         "audio".to_string()
     }
+}
+
+// ── Privacy & Hardware Indicators (Webcam / Mic / Global Mute) ───────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyStatus {
+    pub mic_active: bool,
+    pub camera_active: bool,
+    pub mic_muted: bool,
+    pub active_mic_apps: Vec<String>,
+    pub active_camera_apps: Vec<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadStatus {
+    pub active: bool,
+    pub filename: String,
+    pub speed_bytes_per_sec: u64,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub percent: Option<u8>,
+}
+
+pub fn get_mic_mute() -> bool {
+    prepare_environment();
+    unsafe {
+        let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return false;
+        };
+        let Ok(device) = devices.GetDefaultAudioEndpoint(eCapture, eConsole) else {
+            return false;
+        };
+        let Ok(volume) = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) else {
+            return false;
+        };
+        volume.GetMute().map(|b| b.as_bool()).unwrap_or(false)
+    }
+}
+
+pub fn toggle_mic_mute() -> bool {
+    prepare_environment();
+    unsafe {
+        let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return false;
+        };
+        let Ok(device) = devices.GetDefaultAudioEndpoint(eCapture, eConsole) else {
+            return false;
+        };
+        let Ok(volume) = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) else {
+            return false;
+        };
+        let current = volume.GetMute().map(|b| b.as_bool()).unwrap_or(false);
+        let new_state = !current;
+        let _ = volume.SetMute(new_state, std::ptr::null());
+        new_state
+    }
+}
+
+pub fn change_system_volume(delta: i32) -> i32 {
+    prepare_environment();
+    unsafe {
+        let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return 50;
+        };
+        let Ok(device) = devices.GetDefaultAudioEndpoint(eRender, eMultimedia) else {
+            return 50;
+        };
+        let Ok(volume) = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) else {
+            return 50;
+        };
+        let current = volume.GetMasterVolumeLevelScalar().unwrap_or(0.5);
+        let new_vol = (current + (delta as f32 / 100.0)).clamp(0.0, 1.0);
+        let _ = volume.SetMasterVolumeLevelScalar(new_vol, std::ptr::null());
+        if delta > 0 {
+            let _ = volume.SetMute(false, std::ptr::null());
+        }
+        (new_vol * 100.0).round() as i32
+    }
+}
+
+static CURRENT_BRIGHTNESS: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(70);
+
+pub fn change_system_brightness(delta: i32) -> i32 {
+    let cur = CURRENT_BRIGHTNESS.load(std::sync::atomic::Ordering::Relaxed);
+    let new_val = (cur + delta).clamp(10, 100);
+    CURRENT_BRIGHTNESS.store(new_val, std::sync::atomic::Ordering::Relaxed);
+
+    std::thread::spawn(move || {
+        let cmd = format!(
+            "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {})",
+            new_val
+        );
+        let mut c = Command::new("powershell");
+        c.args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd]);
+        #[cfg(windows)]
+        c.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let _ = c.output();
+    });
+
+    new_val
+}
+
+fn check_key_children(subpath: &str, active: &mut bool, apps: &mut Vec<String>) {
+    let subpath_u16: Vec<u16> = subpath.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut hkey = HKEY::default();
+    unsafe {
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            ::windows::core::PCWSTR(subpath_u16.as_ptr()),
+            Some(0),
+            KEY_READ,
+            &mut hkey,
+        )
+        .is_err()
+        {
+            return;
+        }
+
+        let mut index = 0;
+        let mut name_buf = [0u16; 512];
+        loop {
+            let mut name_len = name_buf.len() as u32;
+            let res = RegEnumKeyExW(
+                hkey,
+                index,
+                Some(PWSTR(name_buf.as_mut_ptr())),
+                &mut name_len,
+                None,
+                None,
+                None,
+                None,
+            );
+            if res.is_err() {
+                break;
+            }
+            index += 1;
+            let child_name = String::from_utf16_lossy(&name_buf[..name_len as usize]);
+            if child_name == "NonPackaged" {
+                continue;
+            }
+
+            let mut child_key = HKEY::default();
+            let child_u16: Vec<u16> = child_name.encode_utf16().chain(std::iter::once(0)).collect();
+            if RegOpenKeyExW(
+                hkey,
+                ::windows::core::PCWSTR(child_u16.as_ptr()),
+                Some(0),
+                KEY_READ,
+                &mut child_key,
+            )
+            .is_ok()
+            {
+                let mut start: u64 = 0;
+                let mut stop: u64 = 0;
+                let mut len = std::mem::size_of::<u64>() as u32;
+
+                let val_start = w!("LastUsedTimeStart");
+                let val_stop = w!("LastUsedTimeStop");
+
+                let q_start = RegQueryValueExW(
+                    child_key,
+                    val_start,
+                    None,
+                    None,
+                    Some(&mut start as *mut u64 as *mut u8),
+                    Some(&mut len),
+                );
+                len = std::mem::size_of::<u64>() as u32;
+                let q_stop = RegQueryValueExW(
+                    child_key,
+                    val_stop,
+                    None,
+                    None,
+                    Some(&mut stop as *mut u64 as *mut u8),
+                    Some(&mut len),
+                );
+
+                let _ = RegCloseKey(child_key);
+
+                if q_start.is_ok() && q_stop.is_ok() {
+                    if stop == 0 || stop < start {
+                        *active = true;
+                        let app_name = clean_app_name(&child_name);
+                        if !app_name.is_empty() {
+                            apps.push(app_name);
+                        }
+                    }
+                }
+            }
+        }
+        let _ = RegCloseKey(hkey);
+    }
+}
+
+fn clean_app_name(raw: &str) -> String {
+    if raw.contains('#') {
+        let exe = raw.rsplit('#').next().unwrap_or(raw);
+        let name = exe.strip_suffix(".exe").unwrap_or(exe);
+        match name.to_lowercase().as_str() {
+            "chrome" => "Google Chrome".into(),
+            "msedge" => "Microsoft Edge".into(),
+            "firefox" => "Firefox".into(),
+            "zoom" => "Zoom".into(),
+            "teams" => "Microsoft Teams".into(),
+            "discord" => "Discord".into(),
+            "obs64" | "obs32" | "obs" => "OBS Studio".into(),
+            "code" => "VS Code".into(),
+            _ => {
+                let mut c = name.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            }
+        }
+    } else {
+        let part = raw.split('_').next().unwrap_or(raw);
+        let name = part.split('.').last().unwrap_or(part);
+        name.to_string()
+    }
+}
+
+fn check_consent_store(subpath: &str) -> (bool, Vec<String>) {
+    let mut active = false;
+    let mut apps = Vec::new();
+
+    check_key_children(subpath, &mut active, &mut apps);
+
+    let non_pkg = format!("{}\\NonPackaged", subpath);
+    check_key_children(&non_pkg, &mut active, &mut apps);
+
+    apps.sort();
+    apps.dedup();
+    (active, apps)
+}
+
+pub fn privacy_status() -> PrivacyStatus {
+    let (mic_active, active_mic_apps) = check_consent_store(
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
+    );
+    let (camera_active, active_camera_apps) = check_consent_store(
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam",
+    );
+    let mic_muted = get_mic_mute();
+
+    PrivacyStatus {
+        mic_active,
+        camera_active,
+        mic_muted,
+        active_mic_apps,
+        active_camera_apps,
+    }
+}
+
+pub fn downloads_dir() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .map(|p| PathBuf::from(p).join("Downloads"))
+        .filter(|p| p.is_dir())
+}
+
+pub fn check_download_status() -> DownloadStatus {
+    let Some(dir) = downloads_dir() else {
+        return DownloadStatus::default();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return DownloadStatus::default();
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+
+        let is_crdownload = name.ends_with(".crdownload");
+        let is_part = name.ends_with(".part");
+        let is_opdownload = name.ends_with(".opdownload");
+
+        if is_crdownload || is_part || is_opdownload {
+            let clean_name = if is_crdownload {
+                name.strip_suffix(".crdownload").unwrap_or(name)
+            } else if is_part {
+                name.strip_suffix(".part").unwrap_or(name)
+            } else {
+                name.strip_suffix(".opdownload").unwrap_or(name)
+            };
+
+            let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+
+            return DownloadStatus {
+                active: true,
+                filename: clean_name.to_string(),
+                speed_bytes_per_sec: 0,
+                downloaded_bytes: len,
+                total_bytes: None,
+                percent: None,
+            };
+        }
+    }
+
+    DownloadStatus::default()
 }
 

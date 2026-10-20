@@ -130,12 +130,13 @@ export function islandSize(
   chatCount = 0,
   charging = false,
   bluetooth = false,
+  download = false,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
       return { w: MINIMIZED_PILL_W, h: MINIMIZED_PILL_H };
     case "compact":
-      if (bluetooth) {
+      if (bluetooth || download) {
         return { w: COMPACT_BT_W, h: COMPACT_BT_H };
       }
       if (charging) {

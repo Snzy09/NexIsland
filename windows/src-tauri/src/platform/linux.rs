@@ -969,3 +969,48 @@ pub fn bluetooth_status() -> BluetoothStatus {
 
 pub fn trim_memory() {}
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyStatus {
+    pub mic_active: bool,
+    pub camera_active: bool,
+    pub mic_muted: bool,
+    pub active_mic_apps: Vec<String>,
+    pub active_camera_apps: Vec<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadStatus {
+    pub active: bool,
+    pub filename: String,
+    pub speed_bytes_per_sec: u64,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub percent: Option<u8>,
+}
+
+pub fn privacy_status() -> PrivacyStatus {
+    PrivacyStatus::default()
+}
+
+pub fn get_mic_mute() -> bool {
+    false
+}
+
+pub fn toggle_mic_mute() -> bool {
+    false
+}
+
+pub fn check_download_status() -> DownloadStatus {
+    DownloadStatus::default()
+}
+
+pub fn change_system_volume(_delta: i32) -> i32 {
+    50
+}
+
+pub fn change_system_brightness(_delta: i32) -> i32 {
+    70
+}
+

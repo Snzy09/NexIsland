@@ -38,6 +38,23 @@ export interface BatteryStatus {
   hasBattery: boolean;
 }
 
+export interface PrivacyStatus {
+  micActive: boolean;
+  cameraActive: boolean;
+  micMuted: boolean;
+  activeMicApps: string[];
+  activeCameraApps: string[];
+}
+
+export interface DownloadStatus {
+  active: boolean;
+  filename: string;
+  speedBytesPerSec: number;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  percent: number | null;
+}
+
 export interface BluetoothStatus {
   connected: boolean;
   name: string;
@@ -270,6 +287,16 @@ export const Bridge = {
   batteryStatus: () => call<BatteryStatus>("battery_status"),
   /** Connected Bluetooth device status */
   bluetoothStatus: () => call<BluetoothStatus>("bluetooth_status"),
+  /** Privacy indicator status (mic / webcam / mute) */
+  privacyStatus: () => call<PrivacyStatus>("privacy_status"),
+  /** Toggle global microphone mute */
+  toggleMicMute: () => call<boolean>("toggle_mic_mute"),
+  /** Active file download status */
+  downloadStatus: () => call<DownloadStatus>("download_status"),
+  /** Adjust master system audio volume (+/- delta) */
+  changeVolume: (delta: number) => call<number>("change_system_volume", { delta }),
+  /** Adjust system display brightness (+/- delta) */
+  changeBrightness: (delta: number) => call<number>("change_system_brightness", { delta }),
   /** Trims working set memory */
   trimMemory: () => call<void>("trim_memory"),
 

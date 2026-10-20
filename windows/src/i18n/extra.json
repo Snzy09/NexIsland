@@ -4570,6 +4570,28 @@
    "pt-BR": "A ilha fica minimizada e se abre sempre que o cursor se aproximar da borda superior.",
    "ru": "Островок остается свернутым и открывается, когда курсор приближается к верхнему краю.",
    "id": "Pulau tetap diperkecil dan terbuka setiap kali kursor Anda bergerak di dekat tepi atas."
+  },
+  "Low Battery": {
+   "zh-Hans": "电量不足",
+   "hi": "बैटरी कम है",
+   "es": "Batería baja",
+   "ar": "البطارية منخفضة",
+   "fr": "Batterie faible",
+   "bn": "ব্যাটারি কম",
+   "pt-BR": "Bateria fraca",
+   "ru": "Низкий заряд",
+   "id": "Baterai lemah"
+  },
+  "Connect charger": {
+   "zh-Hans": "连接充电器",
+   "hi": "चार्जर कनेक्ट करें",
+   "es": "Conectar cargador",
+   "ar": "قم بتوصيل الشاحن",
+   "fr": "Connecter le chargeur",
+   "bn": "চার্জার সংযুক্ত করুন",
+   "pt-BR": "Conectar carregador",
+   "ru": "Подключите зарядное устройство",
+   "id": "Hubungkan pengisi daya"
   }
  }
 }
