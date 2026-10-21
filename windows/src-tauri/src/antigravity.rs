@@ -12,6 +12,90 @@ use serde_json::Value;
 use crate::chat::ChatReply;
 
 static METADATA_CACHE: Mutex<Option<HashMap<String, AntigravityMetadata>>> = Mutex::new(None);
+static LS_CREDENTIALS_CACHE: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+/// Discovers active Antigravity language server address (e.g. 127.0.0.1:62679) and CSRF token.
+pub fn resolve_ls_credentials() -> Option<(String, String)> {
+    if let (Ok(addr), Ok(token)) = (std::env::var("ANTIGRAVITY_LS_ADDRESS"), std::env::var("ANTIGRAVITY_CSRF_TOKEN")) {
+        if !addr.trim().is_empty() && !token.trim().is_empty() {
+            return Some((addr.trim().to_string(), token.trim().to_string()));
+        }
+    }
+
+    if let Ok(guard) = LS_CREDENTIALS_CACHE.lock() {
+        if let Some((addr, token)) = guard.as_ref() {
+            return Some((addr.clone(), token.clone()));
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        if let Some((addr, token)) = discover_windows_ls() {
+            let _ = std::env::set_var("ANTIGRAVITY_LS_ADDRESS", &addr);
+            let _ = std::env::set_var("ANTIGRAVITY_CSRF_TOKEN", &token);
+            if let Ok(mut guard) = LS_CREDENTIALS_CACHE.lock() {
+                *guard = Some((addr.clone(), token.clone()));
+            }
+            return Some((addr, token));
+        }
+    }
+
+    None
+}
+
+pub fn invalidate_ls_credentials() {
+    if let Ok(mut guard) = LS_CREDENTIALS_CACHE.lock() {
+        *guard = None;
+    }
+}
+
+#[cfg(windows)]
+fn discover_windows_ls() -> Option<(String, String)> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let ps_script = r#"
+$p = Get-CimInstance Win32_Process -Filter "Name='language_server.exe'" | Select-Object -First 1
+if ($p -and $p.CommandLine -match '--csrf_token\s+([a-zA-Z0-9\-]+)') {
+    $token = $matches[1]
+    $ports = (Get-NetTCPConnection -OwningProcess $p.ProcessId -State Listen -ErrorAction SilentlyContinue).LocalPort
+    foreach ($port in $ports) {
+        try {
+            $resp = Invoke-RestMethod -Uri "http://127.0.0.1:$port/healthz" -TimeoutSec 1 -ErrorAction Stop
+            if ($resp.status -eq 'ok') {
+                Write-Output "$port,$token"
+                break
+            }
+        } catch {}
+    }
+}
+"#;
+
+    let utf16: Vec<u8> = ps_script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let b64 = crate::claude::base64_for(&utf16);
+
+    let mut cmd = Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &b64]);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some((port_str, token_str)) = trimmed.split_once(',') {
+            if let Ok(port) = port_str.trim().parse::<u16>() {
+                let token = token_str.trim().to_string();
+                if !token.is_empty() {
+                    return Some((format!("127.0.0.1:{port}"), token));
+                }
+            }
+        }
+    }
+    None
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntigravityMetadata {
@@ -235,6 +319,10 @@ fn run_agentapi(args: &[&str]) -> Result<Value, String> {
     let bin = locate_language_server()
         .ok_or_else(|| "Google Antigravity Language Server (language_server.exe / agentapi) is not installed or could not be found.".to_string())?;
 
+    let (addr, token) = resolve_ls_credentials().ok_or_else(|| {
+        "Google Antigravity Language Server is not running or could not be reached. Please make sure Antigravity IDE is open.".to_string()
+    })?;
+
     let is_bat = bin.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bat") || ext.eq_ignore_ascii_case("cmd"));
 
     let mut cmd = if is_bat {
@@ -246,6 +334,9 @@ fn run_agentapi(args: &[&str]) -> Result<Value, String> {
         c.arg("agentapi");
         c
     };
+
+    cmd.env("ANTIGRAVITY_LS_ADDRESS", &addr);
+    cmd.env("ANTIGRAVITY_CSRF_TOKEN", &token);
 
     for arg in args {
         cmd.arg(arg);
@@ -279,6 +370,11 @@ fn run_agentapi(args: &[&str]) -> Result<Value, String> {
         } else {
             format!("Process exited with code {:?}", output.status.code())
         };
+
+        if err_text.contains("connection error") || err_text.contains("missing CSRF") || err_text.contains("Unavailable") {
+            invalidate_ls_credentials();
+        }
+
         return Err(format!("Antigravity agentapi error: {err_text}"));
     }
 
