@@ -57,7 +57,7 @@ function mochiSlot(): HTMLElement {
   const slot = el("span", "mochi");
   slot.append(mochiCanvas);
   slot.style.cursor = "pointer";
-  slot.title = t("Open Coucou");
+  slot.title = t("Open NexIsland");
   slot.addEventListener("click", (e) => {
     e.stopPropagation();
     void FlowBridge.pillAction("hub");
@@ -169,7 +169,7 @@ function content(l: Look): HTMLElement {
         m,
         pillButton("mic", t("Dictate · {0}", { 0: key }), () => void FlowBridge.pillAction("dictate")),
         pillButton("record", t("Record a call"), () => void FlowBridge.pillAction("note")),
-        pillButton("window", t("Open Coucou"), () => void FlowBridge.pillAction("hub")),
+        pillButton("window", t("Open NexIsland"), () => void FlowBridge.pillAction("hub")),
       );
       break;
     }

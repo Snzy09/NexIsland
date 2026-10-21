@@ -22,12 +22,12 @@ const PACKAGES = {
     {
       dir: "nsis",
       suffix: "-setup.exe",
-      names: [`Coucou-Windows-${version}-setup.exe`, "Coucou-Windows-setup.exe"],
+      names: [`NexIsland-Windows-${version}-setup.exe`, "NexIsland-Windows-setup.exe"],
     },
     {
       dir: "msi",
       suffix: ".msi",
-      names: [`Coucou-Windows-${version}.msi`, "Coucou-Windows.msi"],
+      names: [`NexIsland-Windows-${version}.msi`, "NexIsland-Windows.msi"],
     },
   ],
   linux: [
@@ -79,11 +79,11 @@ for (const { dir, suffix, names } of packages) {
 if (process.platform === "win32") {
   const exePath = join(root, "target", "release", "coucou.exe");
   try {
-    const destExe = join(outDir, "coucou.exe");
+    const destExe = join(outDir, "NexIsland.exe");
     copyFileSync(exePath, destExe);
     written.push(destExe);
   } catch (err) {
-    console.error(`Could not copy coucou.exe: ${err}`);
+    console.error(`Could not copy NexIsland.exe: ${err}`);
   }
 }
 

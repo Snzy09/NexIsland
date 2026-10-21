@@ -22,8 +22,8 @@ android {
         applicationId = "com.coucou.android"
         minSdk = 30
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.5"
+        versionCode = 6
+        versionName = "0.5.6"
         // English only: libraries' other languages are left out of the app too.
         resourceConfigurations += listOf("en")
     }
@@ -47,7 +47,7 @@ android {
             isShrinkResources = true
             isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release") // null: unsigned
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     buildFeatures { compose = true }

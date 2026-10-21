@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.6 — October 21, 2026
+
+- **NexIsland Rebranding** — Resmi berganti nama menjadi **NexIsland** dengan Author **Snzy09**.
+- **Brand New Futuristic Icons** — Desain ikon aplikasi baru modern dengan obsidian Dynamic Island capsule, neon cyan-violet glowing rim, dan monogram futuristik di Windows (.ico, multi-size PNG) dan Android (adaptive launcher).
+- **Mobile Live Task Popup & Direct Prompt Dispatch** — Deteksi realtime tugas Antigravity, VS Code, Cursor, & Claude Code di Dynamic Island Android, tap-to-open session screen interaktif, dan prompt composer langsung kirim instruksi ke aplikasi di PC.
+- **Antigravity AgentAPI Fix & Auto-Fallback** — Memperbaiki parsing JSON `newConversation`, caching metadata in-memory, dan fallback otomatis ke `new-conversation` jika sesi berakhir.
+- **Unified Modern Installers** — Format installer Windows modern (NSIS Setup .exe) dan Android APK release siap pasang langsung.
+
 ## Windows and Linux 0.5.0 — October 15, 2026
 
 Windows and Linux catch up with the Mac's 0.3.0 and 0.4.0: the Coucou window, Flow dictation, the Notetaker and « OK Coucou ». All of it free and open source.
