@@ -2,12 +2,16 @@
 // Provides active session discovery, prompt dispatching via the native Antigravity
 // Language Server API (`agentapi`), and status reporting for both desktop and mobile.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::chat::ChatReply;
+
+static METADATA_CACHE: Mutex<Option<HashMap<String, AntigravityMetadata>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntigravityMetadata {
@@ -263,7 +267,15 @@ fn run_agentapi(args: &[&str]) -> Result<Value, String> {
         let err_text = if !stderr_str.trim().is_empty() {
             stderr_str.trim().to_string()
         } else if !stdout_str.trim().is_empty() {
-            stdout_str.trim().to_string()
+            if let Ok(val) = serde_json::from_str::<Value>(&stdout_str) {
+                if let Some(err) = val.get("error").and_then(Value::as_str) {
+                    err.to_string()
+                } else {
+                    stdout_str.trim().to_string()
+                }
+            } else {
+                stdout_str.trim().to_string()
+            }
         } else {
             format!("Process exited with code {:?}", output.status.code())
         };
@@ -277,7 +289,21 @@ fn run_agentapi(args: &[&str]) -> Result<Value, String> {
 
 /// Retrieves metadata for a specific Antigravity conversation.
 pub fn get_conversation_metadata(conversation_id: &str) -> Option<AntigravityMetadata> {
-    let json = run_agentapi(&["get-conversation-metadata", conversation_id]).ok()?;
+    let clean_id = conversation_id.trim();
+    if clean_id.is_empty() || clean_id == "new-session" {
+        return None;
+    }
+
+    // Check memory cache first to avoid launching external processes repeatedly
+    if let Ok(guard) = METADATA_CACHE.lock() {
+        if let Some(cache) = guard.as_ref() {
+            if let Some(cached) = cache.get(clean_id) {
+                return Some(cached.clone());
+            }
+        }
+    }
+
+    let json = run_agentapi(&["get-conversation-metadata", clean_id]).ok()?;
     let meta = json.get("response")?.get("conversationMetadata")?.get("metadata")?;
 
     let mut workspace_path = String::new();
@@ -303,81 +329,97 @@ pub fn get_conversation_metadata(conversation_id: &str) -> Option<AntigravityMet
         .unwrap_or_default()
         .to_string();
 
-    Some(AntigravityMetadata {
-        conversation_id: conversation_id.to_string(),
+    let res = AntigravityMetadata {
+        conversation_id: clean_id.to_string(),
         workspace_name,
         workspace_path,
         created_at,
-    })
+    };
+
+    if let Ok(mut guard) = METADATA_CACHE.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.insert(clean_id.to_string(), res.clone());
+    }
+
+    Some(res)
 }
 
 /// Sends a prompt to an Antigravity session.
 /// If `custom_id` is None, automatically resolves the active session (or creates one).
+/// If `send-message` fails or the session is no longer active, automatically falls back
+/// to creating a new conversation so the user's prompt is always processed without error.
 pub async fn send_prompt(custom_id: Option<&str>, prompt: &str) -> Result<AntigravityPromptResult, String> {
     let trimmed = prompt.trim();
     if trimmed.is_empty() {
         return Err("Prompt cannot be empty.".to_string());
     }
 
-    let active_info = match custom_id {
-        Some(id) => Some(AntigravitySessionInfo {
-            conversation_id: id.to_string(),
-            is_active_lock: true,
-            workspace: None,
-        }),
-        None => find_active_conversation_id(),
+    let target_id: Option<String> = match custom_id {
+        Some(id) if !id.trim().is_empty() => Some(id.trim().to_string()),
+        _ => find_active_conversation_id().map(|info| info.conversation_id),
     };
 
-    if let Some(info) = active_info {
-        let conv_id = info.conversation_id;
-        let json_res = run_agentapi(&["send-message", &conv_id, trimmed])?;
+    // Attempt delivering to existing active session
+    if let Some(conv_id) = target_id {
+        match run_agentapi(&["send-message", &conv_id, trimmed]) {
+            Ok(json_res) => {
+                let has_error = json_res.get("error").and_then(Value::as_str).filter(|e| !e.is_empty());
+                if has_error.is_none() {
+                    let meta = get_conversation_metadata(&conv_id);
+                    let workspace_name = meta.as_ref().map(|m| m.workspace_name.clone()).unwrap_or_else(|| "coucou-windows".to_string());
+                    let workspace_path = meta.as_ref().map(|m| m.workspace_path.clone()).unwrap_or_default();
 
-        if let Some(err_val) = json_res.get("error").and_then(Value::as_str) {
-            if !err_val.is_empty() {
-                return Err(format!("Antigravity error: {err_val}"));
+                    return Ok(AntigravityPromptResult {
+                        conversation_id: conv_id,
+                        workspace_name,
+                        workspace_path,
+                        is_new_session: false,
+                        content: trimmed.to_string(),
+                    });
+                }
+            }
+            Err(e) => {
+                crate::log::line(format!("send-message to {conv_id} failed ({e}), falling back to new-conversation"));
             }
         }
-
-        let meta = get_conversation_metadata(&conv_id);
-        let workspace_name = meta.as_ref().map(|m| m.workspace_name.clone()).unwrap_or_else(|| "coucou-windows".to_string());
-        let workspace_path = meta.as_ref().map(|m| m.workspace_path.clone()).unwrap_or_default();
-
-        Ok(AntigravityPromptResult {
-            conversation_id: conv_id,
-            workspace_name,
-            workspace_path,
-            is_new_session: false,
-            content: trimmed.to_string(),
-        })
-    } else {
-        // No active session exists: create a new conversation with this prompt
-        let json_res = run_agentapi(&["new-conversation", trimmed])?;
-
-        if let Some(err_val) = json_res.get("error").and_then(Value::as_str) {
-            if !err_val.is_empty() {
-                return Err(format!("Antigravity error: {err_val}"));
-            }
-        }
-
-        let new_id = json_res
-            .get("response")
-            .and_then(|r| r.get("conversationId"))
-            .and_then(Value::as_str)
-            .unwrap_or("new-session")
-            .to_string();
-
-        let meta = get_conversation_metadata(&new_id);
-        let workspace_name = meta.as_ref().map(|m| m.workspace_name.clone()).unwrap_or_else(|| "Workspace".to_string());
-        let workspace_path = meta.as_ref().map(|m| m.workspace_path.clone()).unwrap_or_default();
-
-        Ok(AntigravityPromptResult {
-            conversation_id: new_id,
-            workspace_name,
-            workspace_path,
-            is_new_session: true,
-            content: trimmed.to_string(),
-        })
     }
+
+    // Fallback or no active session: create a new conversation with this prompt
+    let json_res = run_agentapi(&["new-conversation", trimmed])?;
+
+    if let Some(err_val) = json_res.get("error").and_then(Value::as_str) {
+        if !err_val.is_empty() {
+            return Err(format!("Antigravity error: {err_val}"));
+        }
+    }
+
+    let new_id = json_res
+        .get("response")
+        .and_then(|r| {
+            r.get("newConversation")
+                .and_then(|nc| nc.get("conversationId"))
+                .or_else(|| r.get("conversationId"))
+        })
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    let meta = if !new_id.is_empty() && new_id != "new-session" {
+        get_conversation_metadata(&new_id)
+    } else {
+        None
+    };
+
+    let workspace_name = meta.as_ref().map(|m| m.workspace_name.clone()).unwrap_or_else(|| "Workspace".to_string());
+    let workspace_path = meta.as_ref().map(|m| m.workspace_path.clone()).unwrap_or_default();
+
+    Ok(AntigravityPromptResult {
+        conversation_id: if new_id.is_empty() { "new-conversation".to_string() } else { new_id },
+        workspace_name,
+        workspace_path,
+        is_new_session: true,
+        content: trimmed.to_string(),
+    })
 }
 
 /// Dispatches a prompt to Antigravity and formats a friendly Markdown reply for Coucou Chat.
