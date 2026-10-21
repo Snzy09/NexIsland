@@ -106,7 +106,7 @@ class IslandOverlay(
     private val clock: () -> Double,
     private val onAllow: (fingerprint: String) -> Unit,
     private val onDeny: (fingerprint: String) -> Unit,
-    private val onOpen: () -> Unit,
+    private val onOpen: (pillId: String?) -> Unit,
 ) {
     private val wm = context.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
@@ -441,7 +441,9 @@ class IslandOverlay(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).clickable {
+                    tap("minimized agent") { onOpen(s.pillId) }
+                },
             ) {
                 MochiView(engine, Modifier.size(20.dp))
                 Text(
@@ -503,16 +505,16 @@ class IslandOverlay(
         val engine = remember(s.state) { MochiEngine(clock).apply { setState(s.state, force = true) } }
         Row(
             Modifier.fillMaxWidth()
-                .clickable { tap("the working strip") { onOpen() } }
+                .clickable { tap("the working strip") { onOpen(s.pillId) } }
                 .padding(horizontal = 14.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.clickable { tap("Mochi") { onOpen() } }) {
+            Box(Modifier.clickable { tap("Mochi") { onOpen(s.pillId) } }) {
                 MochiView(engine, Modifier.size(24.dp))
             }
             Spacer(Modifier.width(8.dp))
             Column(
-                Modifier.weight(1f).clickable { tap("agent name") { onOpen() } },
+                Modifier.weight(1f).clickable { tap("agent name") { onOpen(s.pillId) } },
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
@@ -559,7 +561,7 @@ class IslandOverlay(
         }
         Row(
             Modifier.fillMaxWidth()
-                .clickable { tap("the result card") { onOpen() } }
+                .clickable { tap("the result card") { onOpen(s.pillId) } }
                 .padding(horizontal = 14.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -615,7 +617,7 @@ class IslandOverlay(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
-                Modifier.clickable { tap("the request header") { onOpen() } },
+                Modifier.clickable { tap("the request header") { onOpen(s.pillId) } },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MochiView(engine, Modifier.size(28.dp))

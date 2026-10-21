@@ -298,7 +298,13 @@ class AppModel(private val context: Context) : LinkListener {
         context, { android.os.SystemClock.elapsedRealtimeNanos() / 1e6 },
         onAllow = { notifier.openAllow(it) },
         onDeny = { decide(it, allow = false) },
-        onOpen = { notifier.openApp() },
+        onOpen = { pillId ->
+            if (!pillId.isNullOrBlank()) {
+                notifier.openSession(pillId)
+            } else {
+                notifier.openApp()
+            }
+        },
     )
 
     fun overlayPermitted() = overlay.permitted()

@@ -24,6 +24,19 @@ pub struct AntigravitySessionInfo {
     pub workspace: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravityLiveTask {
+    pub session_id: String,
+    pub is_active: bool,
+    pub state: String,
+    pub status_text: String,
+    pub steps: Vec<String>,
+    pub final_line: Option<String>,
+    pub workspace_name: String,
+    pub workspace_path: String,
+}
+
 pub struct AntigravityPromptResult {
     pub conversation_id: String,
     pub workspace_name: String,
@@ -448,6 +461,143 @@ pub fn status_summary() -> String {
     text.push_str("- Prompts sent from your phone are immediately delivered to the active session on this PC!\n");
 
     text
+}
+
+fn read_transcript_tail(path: &Path, max_bytes: u64) -> Option<Vec<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let to_read = len.min(max_bytes);
+    file.seek(SeekFrom::Start(len - to_read)).ok()?;
+    let mut buf = vec![0u8; to_read as usize];
+    file.read_exact(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+    if len > max_bytes && !lines.is_empty() {
+        lines.remove(0);
+    }
+    Some(lines)
+}
+
+/// Retrieves the live task state from the active Antigravity session and its transcript.
+pub fn get_live_antigravity_task() -> Option<AntigravityLiveTask> {
+    let session = find_active_conversation_id()?;
+    let conv_id = session.conversation_id;
+    let home = crate::platform::home_dir();
+    let antigravity_dir = home.join(".gemini").join("antigravity");
+
+    let lock_path = antigravity_dir.join("presence").join(format!("{conv_id}.lock"));
+    let lock_exists = lock_path.is_file();
+
+    let transcript_path = antigravity_dir
+        .join("brain")
+        .join(&conv_id)
+        .join(".system_generated")
+        .join("logs")
+        .join("transcript.jsonl");
+
+    let meta = std::fs::metadata(&transcript_path).ok();
+    let (elapsed, modified_recent) = if let Some(ref m) = meta {
+        let modified = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let el = std::time::SystemTime::now()
+            .duration_since(modified)
+            .unwrap_or(std::time::Duration::from_secs(99999));
+        (el, el <= std::time::Duration::from_secs(45))
+    } else {
+        (std::time::Duration::from_secs(99999), false)
+    };
+
+    if !lock_exists && elapsed > std::time::Duration::from_secs(300) {
+        return None;
+    }
+
+    let tail_lines = if transcript_path.is_file() {
+        read_transcript_tail(&transcript_path, 128 * 1024).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let mut steps = Vec::new();
+    let mut last_status_text = String::new();
+    let mut final_line: Option<String> = None;
+
+    for line in &tail_lines {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else { continue; };
+        let typ = val.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+        let source = val.get("source").and_then(|v| v.as_str()).unwrap_or_default();
+
+        if typ == "USER_INPUT" || source == "USER_EXPLICIT" {
+            if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                let clean = content.trim();
+                if !clean.is_empty() {
+                    let summary = if clean.chars().count() > 60 {
+                        format!("{}...", clean.chars().take(57).collect::<String>())
+                    } else {
+                        clean.to_string()
+                    };
+                    steps.push(format!("Prompt: {summary}"));
+                    final_line = Some(clean.to_string());
+                }
+            }
+        } else if typ == "PLANNER_RESPONSE" {
+            if let Some(tool_calls) = val.get("tool_calls").and_then(|v| v.as_array()) {
+                for tc in tool_calls {
+                    let tool_name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
+                    let summary = tc.get("args")
+                        .and_then(|a| a.get("toolSummary"))
+                        .and_then(|s| s.as_str());
+                    let label = match summary {
+                        Some(s) if !s.is_empty() => s.to_string(),
+                        _ => format!("Tool: {tool_name}"),
+                    };
+                    last_status_text = label.clone();
+                    steps.push(label);
+                }
+            }
+            if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                let clean = content.trim();
+                if !clean.is_empty() {
+                    final_line = Some(clean.to_string());
+                }
+            }
+        }
+    }
+
+    let is_active = modified_recent || lock_exists;
+    let state = if modified_recent {
+        "working"
+    } else if lock_exists {
+        "idle"
+    } else {
+        "finished"
+    };
+
+    let status_text = if !last_status_text.is_empty() {
+        last_status_text
+    } else if modified_recent {
+        "Sedang menjalankan tugas...".to_string()
+    } else {
+        "Siap menerima prompt".to_string()
+    };
+
+    if steps.len() > 20 {
+        steps = steps.split_off(steps.len() - 20);
+    }
+
+    let meta_info = get_conversation_metadata(&conv_id);
+    let ws_name = meta_info.as_ref().map(|m| m.workspace_name.clone()).unwrap_or_else(|| "coucou-windows".to_string());
+    let ws_path = meta_info.as_ref().map(|m| m.workspace_path.clone()).unwrap_or_default();
+
+    Some(AntigravityLiveTask {
+        session_id: conv_id,
+        is_active,
+        state: state.to_string(),
+        status_text,
+        steps,
+        final_line,
+        workspace_name: ws_name,
+        workspace_path: ws_path,
+    })
 }
 
 /// Brings the Antigravity IDE window to the foreground if running.

@@ -206,6 +206,14 @@ class Notifications(private val context: Context) {
         runCatching { open(null, false, 0).send() }
     }
 
+    fun openSession(pillId: String) {
+        Log.d("CoucouLaunch", "open session: $pillId (tap on the pill)")
+        val i = Intent(context, LaunchActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(LaunchActivity.EXTRA_SESSION, pillId)
+        context.startActivity(i)
+    }
+
     companion object {
         const val CH_LINK = "link"
         private const val WAKE_MS = 6_000L

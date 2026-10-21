@@ -825,6 +825,25 @@ pub fn spawn_download_watcher(app: AppHandle) {
     });
 }
 
+/// Spawns a watcher checking active Google Antigravity session and tasks every 1.5 seconds
+pub fn spawn_antigravity_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut last_task: Option<crate::antigravity::AntigravityLiveTask> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(1500));
+            if let Some(task) = crate::antigravity::get_live_antigravity_task() {
+                if last_task.as_ref() != Some(&task) {
+                    last_task = Some(task.clone());
+                    let _ = app.emit_to(WINDOW_LABEL, "antigravity-live-task", task);
+                }
+            } else if last_task.is_some() {
+                last_task = None;
+                let _ = app.emit_to(WINDOW_LABEL, "antigravity-live-task", serde_json::Value::Null);
+            }
+        }
+    });
+}
+
 /// Trims physical memory every 60 seconds when the island is collapsed/idle
 pub fn spawn_memory_trimmer(gate: Arc<PollGate>) {
     std::thread::spawn(move || {

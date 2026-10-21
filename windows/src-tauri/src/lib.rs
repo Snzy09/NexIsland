@@ -837,6 +837,11 @@ fn download_status() -> platform::DownloadStatus {
 }
 
 #[tauri::command]
+fn antigravity_live_task() -> Option<antigravity::AntigravityLiveTask> {
+    antigravity::get_live_antigravity_task()
+}
+
+#[tauri::command]
 fn change_system_volume(delta: i32) -> i32 {
     platform::change_system_volume(delta)
 }
@@ -938,6 +943,7 @@ pub fn run() {
             privacy_status,
             toggle_mic_mute,
             download_status,
+            antigravity_live_task,
             change_system_volume,
             change_system_brightness,
             trim_memory,
@@ -1070,6 +1076,7 @@ pub fn run() {
             island::spawn_bluetooth_watcher(handle.clone());
             island::spawn_privacy_watcher(handle.clone());
             island::spawn_download_watcher(handle.clone());
+            island::spawn_antigravity_watcher(handle.clone());
             island::spawn_memory_trimmer(gate.clone());
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));

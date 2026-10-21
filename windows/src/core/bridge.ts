@@ -55,6 +55,17 @@ export interface DownloadStatus {
   percent: number | null;
 }
 
+export interface AntigravityLiveTask {
+  sessionId: string;
+  isActive: boolean;
+  state: string;
+  statusText: string;
+  steps: string[];
+  finalLine: string | null;
+  workspaceName: string;
+  workspacePath: string;
+}
+
 export interface BluetoothStatus {
   connected: boolean;
   name: string;
@@ -293,6 +304,8 @@ export const Bridge = {
   toggleMicMute: () => call<boolean>("toggle_mic_mute"),
   /** Active file download status */
   downloadStatus: () => call<DownloadStatus>("download_status"),
+  /** Live Antigravity session task */
+  antigravityLiveTask: () => call<AntigravityLiveTask | null>("antigravity_live_task"),
   /** Adjust master system audio volume (+/- delta) */
   changeVolume: (delta: number) => call<number>("change_system_volume", { delta }),
   /** Adjust system display brightness (+/- delta) */

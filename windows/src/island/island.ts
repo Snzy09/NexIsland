@@ -2,7 +2,7 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
-import { Bridge, IS_TAURI, onDragDrop, onEvent, type BatteryStatus, type BluetoothStatus, type DownloadStatus, type PrivacyStatus } from "../core/bridge";
+import { Bridge, IS_TAURI, onDragDrop, onEvent, type AntigravityLiveTask, type BatteryStatus, type BluetoothStatus, type DownloadStatus, type PrivacyStatus } from "../core/bridge";
 import {
   COMPACT_CHARGING_R,
   COMPACT_BT_R,
@@ -11,7 +11,7 @@ import {
   islandSize,
   QUESTION_PICKER_H,
   MINIMIZED_PILL_W, MINIMIZED_PILL_H, MINIMIZED_PILL_R,
-  type BotEmoteName, type IslandMode, type IslandViewName,
+  type BotEmoteName, type BotStateName, type IslandMode, type IslandViewName,
 } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
@@ -201,6 +201,14 @@ export class Island {
     void onEvent<string>("download-complete", (filename) => {
       this.handleDownloadComplete(filename);
     });
+    void onEvent<AntigravityLiveTask | null>("antigravity-live-task", (task) => {
+      this.handleAntigravityTask(task);
+    });
+    void Bridge.antigravityLiveTask().then((task) => {
+      if (task) {
+        this.handleAntigravityTask(task);
+      }
+    });
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => {
       this.fsm.greetComplete();
@@ -319,6 +327,40 @@ export class Island {
     }, 4500);
     this.animateGeometry(false);
     State.notify();
+  }
+
+  private handleAntigravityTask(task: AntigravityLiveTask | null) {
+    if (!task) {
+      const existing = State.tasks.find((x) => x.id === "agent_antigravity");
+      if (existing && (existing.state === "working" || existing.state === "thinking")) {
+        existing.state = "finished";
+        this.dirty = true;
+        State.notify();
+      }
+      return;
+    }
+    let t = State.tasks.find((x) => x.id === "agent_antigravity");
+    if (!t) {
+      State.upsertExternalAgent("agent_antigravity", "Antigravity", "#E879F9");
+      t = State.tasks.find((x) => x.id === "agent_antigravity");
+    }
+    if (t) {
+      const wasWorking = t.state === "working" || t.state === "thinking";
+      t.state = (task.state as BotStateName) || "working";
+      t.statusText = task.statusText;
+      t.steps = task.steps;
+      t.stepIndex = Math.max(0, task.steps.length - 1);
+      if (task.finalLine) t.finalLine = task.finalLine;
+      if (task.workspacePath) t.sessionCwd = task.workspacePath;
+      if (task.sessionId) t.sessionId = task.sessionId;
+      if (!wasWorking && (t.state === "working" || t.state === "thinking")) {
+        if (this.fsm.state === "hidden") {
+          this.fsm.reveal();
+        }
+      }
+      this.dirty = true;
+      State.notify();
+    }
   }
 
   private handleBluetoothStatus(status: BluetoothStatus) {

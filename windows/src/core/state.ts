@@ -38,6 +38,8 @@ export interface AgentTask {
   sessionCwd?: string | null;
   /** Claude Code's session, so "Open terminal" can find the window it runs in. */
   sessionId?: string | null;
+  /** Human-readable status description of the current task. */
+  statusText?: string | null;
   /** Claude's final message after Stop, one line; cleared when a new turn starts. */
   finalLine?: string | null;
 }
