@@ -401,6 +401,26 @@ body {
   fill: #ffffff;
 }
 
+/* ── Disconnected Bluetooth Banner Style ── */
+#bluetooth-banner.disconnected .bt-ring-progress {
+  stroke: #ef4444;
+}
+
+#bluetooth-banner.disconnected .bt-audio-glow {
+  border-color: rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+}
+
+#bluetooth-banner.disconnected .bt-audio-circle {
+  background: rgba(83, 14, 14, 0.85);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+#bluetooth-banner.disconnected .bt-sub {
+  color: #f87171;
+  font-weight: 600;
+}
+
 /* ── Low Battery Alert Style in Charging Banner ── */
 
 #charging-banner.low-battery .charging-ring {

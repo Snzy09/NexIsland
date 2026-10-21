@@ -23,6 +23,28 @@
    "ru": "Зарядка",
    "id": "Mengisi daya"
   },
+  "Disconnected": {
+   "zh-Hans": "已断开连接",
+   "hi": "डिस्कनेक्ट हो गया",
+   "es": "Desconectado",
+   "ar": "تم قطع الاتصال",
+   "fr": "Déconnecté",
+   "bn": "বিচ্ছিন্ন",
+   "pt-BR": "Desconectado",
+   "ru": "Отключено",
+   "id": "Terputus"
+  },
+  "Open NexIsland": {
+   "zh-Hans": "打开 NexIsland",
+   "hi": "NexIsland खोलें",
+   "es": "Abrir NexIsland",
+   "ar": "فتح NexIsland",
+   "fr": "Ouvrir NexIsland",
+   "bn": "NexIsland খুলুন",
+   "pt-BR": "Abrir NexIsland",
+   "ru": "Открыть NexIsland",
+   "id": "Buka NexIsland"
+  },
   "Fully Charged": {
    "zh-Hans": "已充满电",
    "hi": "पूरी तरह चार्ज",

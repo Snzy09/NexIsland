@@ -79,6 +79,8 @@ export class Island {
   private bluetoothSub!: HTMLElement;
   private bluetoothRight!: HTMLElement;
   private bluetoothPopupTimer: number | null = null;
+  private bluetoothDisconnectedMode = false;
+  private lastDisconnectedName = "";
 
   private downloadBanner!: HTMLElement;
   private downloadProgressCircle!: SVGCircleElement;
@@ -365,8 +367,10 @@ export class Island {
 
   private handleBluetoothStatus(status: BluetoothStatus) {
     const wasConnected = State.bluetoothStatus.connected;
+    const oldName = State.bluetoothStatus.name;
     State.bluetoothStatus = status;
     if (!wasConnected && status.connected) {
+      this.bluetoothDisconnectedMode = false;
       Sound.play("pop");
       if (this.fsm.state === "hidden") {
         this.fsm.reveal();
@@ -387,6 +391,31 @@ export class Island {
           });
         }
       }, 5000);
+    } else if (wasConnected && !status.connected) {
+      this.bluetoothDisconnectedMode = true;
+      this.lastDisconnectedName = status.name || oldName || "Bluetooth Device";
+      Sound.play("pop");
+      if (this.fsm.state === "hidden") {
+        this.fsm.reveal();
+      }
+      this.fsm.pinned = true;
+      if (this.bluetoothPopupTimer != null) {
+        window.clearTimeout(this.bluetoothPopupTimer);
+      }
+      this.bluetoothPopupTimer = window.setTimeout(() => {
+        this.bluetoothDisconnectedMode = false;
+        this.fsm.pinned = false;
+        this.bluetoothPopupTimer = null;
+        this.animateGeometry(true);
+        State.notify();
+        if (this.fsm.islandBehavior === "auto_minimize_tabs") {
+          void Bridge.browserTabsBlocked().then((blocked) => {
+            if (blocked && this.fsm.state !== "hidden" && !this.wasInIsland) {
+              this.fsm.forceHidden();
+            }
+          });
+        }
+      }, 4000);
     }
     this.animateGeometry(false);
     State.notify();
@@ -1073,7 +1102,7 @@ export class Island {
     if (State.mode === "hidden") {
       return { w: MINIMIZED_PILL_W, h: MINIMIZED_PILL_H, r: MINIMIZED_PILL_R };
     }
-    const isBluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const isBluetoothCompact = State.mode === "compact" && (State.bluetoothStatus.connected || this.bluetoothDisconnectedMode);
     const isDownloadCompact = State.mode === "compact" && !isBluetoothCompact && State.downloadStatus.active;
     const isChargingCompact = State.mode === "compact" && !isBluetoothCompact && !isDownloadCompact &&
       ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
@@ -1417,7 +1446,7 @@ export class Island {
 
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
     const away = State.mochiOnDesktop;
-    const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const bluetoothCompact = State.mode === "compact" && (State.bluetoothStatus.connected || this.bluetoothDisconnectedMode);
     const downloadCompact = State.mode === "compact" && !bluetoothCompact && State.downloadStatus.active;
     const chargingCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact &&
       ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
@@ -1483,7 +1512,7 @@ export class Island {
     // The drop canvas draws its own Mochi; two of them would overlap. Out on the
     // desktop, he isn't here at all.
     const away = State.mochiOnDesktop;
-    const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const bluetoothCompact = State.mode === "compact" && (State.bluetoothStatus.connected || this.bluetoothDisconnectedMode);
     const downloadCompact = State.mode === "compact" && !bluetoothCompact && State.downloadStatus.active;
     const chargingCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact &&
       ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
@@ -1638,7 +1667,7 @@ export class Island {
     }
 
     // Compact mini grid, charging banner, bluetooth banner & download banner
-    const bluetoothCompact = State.mode === "compact" && State.bluetoothStatus.connected;
+    const bluetoothCompact = State.mode === "compact" && (State.bluetoothStatus.connected || this.bluetoothDisconnectedMode);
     const downloadCompact = State.mode === "compact" && !bluetoothCompact && State.downloadStatus.active;
     const chargingCompact = State.mode === "compact" && !bluetoothCompact && !downloadCompact &&
       ((State.isCharging && (State.settings.chargingStatusInIsland ?? true)) || this.batteryBannerMode != null);
@@ -1660,14 +1689,25 @@ export class Island {
 
     if (bluetoothCompact) {
       this.bluetoothBanner.style.display = "flex";
-      const devName = State.bluetoothStatus.name || "Bluetooth Device";
-      this.bluetoothTitle.textContent = devName;
-      const lvl = State.bluetoothStatus.level ?? 100;
-      this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
-      const circumference = 87.96;
-      const offset = circumference - (Math.max(0, Math.min(100, lvl)) / 100) * circumference;
-      this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
-      this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+      const isDisconnected = this.bluetoothDisconnectedMode || !State.bluetoothStatus.connected;
+      this.bluetoothBanner.classList.toggle("disconnected", isDisconnected);
+      if (isDisconnected) {
+        const devName = this.lastDisconnectedName || State.bluetoothStatus.name || "Bluetooth Device";
+        this.bluetoothTitle.textContent = devName;
+        this.bluetoothSub.textContent = t("Disconnected");
+        const circumference = 87.96;
+        this.bluetoothProgressCircle.style.strokeDashoffset = `${circumference}`;
+        this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+      } else {
+        const devName = State.bluetoothStatus.name || "Bluetooth Device";
+        this.bluetoothTitle.textContent = devName;
+        const lvl = State.bluetoothStatus.level ?? 100;
+        this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
+        const circumference = 87.96;
+        const offset = circumference - (Math.max(0, Math.min(100, lvl)) / 100) * circumference;
+        this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
+        this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+      }
     } else {
       this.bluetoothBanner.style.display = "none";
     }

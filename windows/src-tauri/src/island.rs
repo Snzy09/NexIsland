@@ -720,16 +720,25 @@ pub fn spawn_battery_watcher(app: AppHandle) {
     });
 }
 
-/// Spawns a watcher checking connected bluetooth devices every 3 seconds
+/// Spawns a watcher checking connected bluetooth devices every 2 seconds
 pub fn spawn_bluetooth_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last_status = platform::bluetooth_status();
         loop {
-            std::thread::sleep(Duration::from_millis(3000));
+            std::thread::sleep(Duration::from_millis(2000));
             let status = platform::bluetooth_status();
             if status != last_status {
-                last_status = status.clone();
-                let _ = app.emit_to(WINDOW_LABEL, "bluetooth-status", status);
+                let mut emit_status = status.clone();
+                if last_status.connected && !status.connected {
+                    if emit_status.name.is_empty() {
+                        emit_status.name = last_status.name.clone();
+                    }
+                    if emit_status.device_type.is_empty() {
+                        emit_status.device_type = last_status.device_type.clone();
+                    }
+                }
+                last_status = status;
+                let _ = app.emit_to(WINDOW_LABEL, "bluetooth-status", emit_status);
             }
         }
     });
