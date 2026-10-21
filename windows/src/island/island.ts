@@ -15,7 +15,7 @@ import {
 } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
-import { SPOTIFY_ID, Spotify, islandDances } from "../core/spotify";
+import { SPOTIFY_ID, Spotify, isSpotifyTab, islandDances } from "../core/spotify";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
@@ -711,24 +711,42 @@ export class Island {
 
     // Mouse wheel scroll gesture: scroll on notch to adjust Volume or Brightness
     this.islandEl.addEventListener("wheel", (e: WheelEvent) => {
-      e.preventDefault();
       const isUp = e.deltaY < 0;
       const step = isUp ? 4 : -4;
       if (e.shiftKey) {
+        e.preventDefault();
         void Bridge.changeBrightness(step).then((b) => {
           if (b != null) this.showHudToast("brightness", b);
         });
+        return;
+      }
+
+      // Volume scroller only works when specifically on the Spotify tab
+      const isSpotify = isSpotifyTab({
+        mode: State.mode,
+        view: State.view,
+        focusId: State.focusId,
+        focusTaskId: State.focusTask?.id,
+      });
+
+      // Do not intercept or adjust volume on other tabs or inside scrollable lyrics
+      const targetEl = e.target as HTMLElement | null;
+      if (!isSpotify || targetEl?.closest?.(".np-lyrics-container")) {
+        return;
+      }
+
+      e.preventDefault();
+      const cur = Spotify.state.volume;
+      const next = Math.max(0, Math.min(100, cur + step));
+      if (Spotify.state.running || State.spotifyPlaying || Spotify.state.track != null) {
+        Spotify.state = { ...Spotify.state, volume: next };
+        void Bridge.spotifyControl("volume", next);
+        this.showHudToast("volume", next);
+        State.notify();
       } else {
-        if (State.spotifyPlaying) {
-          const cur = Spotify.state.volume;
-          const next = Math.max(0, Math.min(100, cur + step));
-          void Bridge.spotifyControl("volume", next);
-          this.showHudToast("volume", next);
-        } else {
-          void Bridge.changeVolume(step).then((v) => {
-            if (v != null) this.showHudToast("volume", v);
-          });
-        }
+        void Bridge.changeVolume(step).then((v) => {
+          if (v != null) this.showHudToast("volume", v);
+        });
       }
     }, { passive: false });
 
@@ -1701,12 +1719,18 @@ export class Island {
       } else {
         const devName = State.bluetoothStatus.name || "Bluetooth Device";
         this.bluetoothTitle.textContent = devName;
-        const lvl = State.bluetoothStatus.level ?? 100;
-        this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
+        const lvl = State.bluetoothStatus.level;
         const circumference = 87.96;
-        const offset = circumference - (Math.max(0, Math.min(100, lvl)) / 100) * circumference;
-        this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
-        this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+        if (lvl != null) {
+          this.bluetoothSub.textContent = t("Connected · {detail}", { detail: `${lvl}%` });
+          const offset = circumference - (Math.max(0, Math.min(100, lvl)) / 100) * circumference;
+          this.bluetoothProgressCircle.style.strokeDashoffset = `${offset}`;
+          this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+        } else {
+          this.bluetoothSub.textContent = t("Connected");
+          this.bluetoothProgressCircle.style.strokeDashoffset = "0";
+          this.bluetoothProgressCircle.style.strokeDasharray = `${circumference}`;
+        }
       }
     } else {
       this.bluetoothBanner.style.display = "none";

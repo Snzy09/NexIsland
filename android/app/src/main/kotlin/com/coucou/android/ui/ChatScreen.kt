@@ -15,11 +15,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -59,12 +64,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.coucou.android.R
 import com.coucou.android.app.AppModel
 import com.coucou.android.core.ChatMessage
@@ -377,12 +386,88 @@ private fun MarkdownText(text: String) {
                     Text("•  ", style = body)
                     Text(styled(b.spans, code), Modifier.weight(1f), style = body)
                 }
-                is MdBlock.Code -> Text(
-                    b.text,
+                is MdBlock.Task -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    val checkBg = if (b.checked) androidx.compose.ui.graphics.Color(0xFF10B981) else androidx.compose.ui.graphics.Color(0x28FFFFFF)
+                    val checkBorder = if (b.checked) androidx.compose.ui.graphics.Color(0xFF10B981) else androidx.compose.ui.graphics.Color(0x40FFFFFF)
+                    Box(
+                        Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(checkBg).border(1.dp, checkBorder, RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (b.checked) {
+                            Text("✓", fontSize = 10.sp, color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(styled(b.spans, code), Modifier.weight(1f), style = body)
+                }
+                is MdBlock.Code -> Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(code)
-                        .border(1.dp, t.line.c(), RoundedCornerShape(12.dp)).padding(12.dp),
-                    style = TypeScale.MONO.style(t.text.c()).copy(fontFamily = FontFamily.Monospace),
-                )
+                        .border(1.dp, t.line.c(), RoundedCornerShape(12.dp)).padding(12.dp)
+                ) {
+                    if (b.lang.isNotBlank()) {
+                        Text(
+                            b.lang.uppercase(),
+                            Modifier.clip(RoundedCornerShape(4.dp)).background(androidx.compose.ui.graphics.Color(0x286366F1))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = TypeScale.LABEL.style(androidx.compose.ui.graphics.Color(0xFFA5B4FC)).copy(fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    Text(
+                        b.text,
+                        style = TypeScale.MONO.style(t.text.c()).copy(fontFamily = FontFamily.Monospace),
+                    )
+                }
+                is MdBlock.Math -> Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(androidx.compose.ui.graphics.Color(0x14FFFFFF))
+                        .border(1.dp, androidx.compose.ui.graphics.Color(0x22FFFFFF), RoundedCornerShape(10.dp)).padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        b.text,
+                        style = TypeScale.BODY.style(androidx.compose.ui.graphics.Color(0xFFF8FAFC)).copy(
+                            fontStyle = FontStyle.Italic,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                }
+                is MdBlock.Card -> {
+                    val accentColor = when (b.type) {
+                        "tip" -> androidx.compose.ui.graphics.Color(0xFF10B981)
+                        "warning" -> androidx.compose.ui.graphics.Color(0xFFF59E0B)
+                        "caution", "danger" -> androidx.compose.ui.graphics.Color(0xFFEF4444)
+                        "important" -> androidx.compose.ui.graphics.Color(0xFF8B5CF6)
+                        else -> androidx.compose.ui.graphics.Color(0xFF3B82F6)
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(accentColor.copy(alpha = 0.08f))
+                            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp)).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(b.title, style = TypeScale.TITLE.style(accentColor).copy(fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                        Text(b.text, style = body)
+                    }
+                }
+                is MdBlock.Table -> {
+                    val scrollState = rememberScrollState()
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(code)
+                            .border(1.dp, t.line.c(), RoundedCornerShape(10.dp)).horizontalScroll(scrollState).padding(8.dp)
+                    ) {
+                        Row(Modifier.background(androidx.compose.ui.graphics.Color(0x18FFFFFF)).padding(6.dp)) {
+                            for (h in b.headers) {
+                                Text(h, Modifier.widthIn(min = 80.dp).padding(horizontal = 8.dp), style = body.copy(fontWeight = FontWeight.Bold))
+                            }
+                        }
+                        for (row in b.rows) {
+                            Row(Modifier.padding(6.dp)) {
+                                for (c in row) {
+                                    Text(c, Modifier.widthIn(min = 80.dp).padding(horizontal = 8.dp), style = body)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -390,10 +475,25 @@ private fun MarkdownText(text: String) {
 
 private fun styled(spans: List<MdSpan>, codeBackground: androidx.compose.ui.graphics.Color): AnnotatedString = buildAnnotatedString {
     for (s in spans) {
+        val deco = when {
+            s.underline && s.strike -> TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
+            s.underline -> TextDecoration.Underline
+            s.strike -> TextDecoration.LineThrough
+            else -> null
+        }
+        val bg = when {
+            s.mark -> androidx.compose.ui.graphics.Color(0x40FACC15)
+            s.kbd -> androidx.compose.ui.graphics.Color(0x28FFFFFF)
+            s.code -> codeBackground
+            s.math -> androidx.compose.ui.graphics.Color(0x18FFFFFF)
+            else -> androidx.compose.ui.graphics.Color.Unspecified
+        }
         val style = SpanStyle(
             fontWeight = if (s.bold) FontWeight.Bold else null,
-            fontFamily = if (s.code) FontFamily.Monospace else null,
-            background = if (s.code) codeBackground else androidx.compose.ui.graphics.Color.Unspecified,
+            fontStyle = if (s.italic) FontStyle.Italic else null,
+            fontFamily = if (s.code || s.kbd || s.math) FontFamily.Monospace else null,
+            textDecoration = deco,
+            background = bg,
         )
         withStyle(style) { append(s.text) }
     }
@@ -481,58 +581,167 @@ private fun Composer(
     }
 }
 
+private fun slashBadgeColors(badge: String): Pair<Color, Color> = when (badge.lowercase().trim()) {
+    "agent" -> Color(0x336366F1) to Color(0xFFC7D2FE)
+    "providers", "provider" -> Color(0x330284C7) to Color(0xFF7DD3FC)
+    "device" -> Color(0x33D97706) to Color(0xFFFCD34D)
+    "skills", "skill" -> Color(0x33059669) to Color(0xFF6EE7B7)
+    "mcp" -> Color(0x33DB2777) to Color(0xFFF472B6)
+    "reset" -> Color(0x33E11D48) to Color(0xFFFDA4AF)
+    else -> Color(0x26FFFFFF) to Color(0xFFE2E8F0)
+}
+
 @Composable
 private fun SlashCommandMenu(matches: List<SlashCommandItem>, onSelect: (SlashCommandItem) -> Unit) {
     val t = tokens()
     Panel(
-        Modifier.fillMaxWidth().heightIn(max = 240.dp)
-            .border(1.dp, t.line.c(), RoundedCornerShape(18.dp)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 280.dp)
+            .border(1.dp, Color(0x2EFFFFFF), RoundedCornerShape(22.dp)),
+        wash = Color(0xFF6366F1),
     ) {
-        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Slash Commands",
-                    style = TypeScale.LABEL.style(t.text.c()).copy(fontWeight = FontWeight.SemiBold),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0x2E6366F1)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "⌘",
+                            style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA5B4FC)),
+                        )
+                    }
+                    Text(
+                        "Slash Commands",
+                        style = TypeScale.LABEL.style(Color(0xFFF1F5F9)).copy(fontWeight = FontWeight.Bold),
+                    )
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x1F6366F1))
+                            .border(1.dp, Color(0x3D818CF8), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            "${matches.size}",
+                            style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFA5B4FC)),
+                        )
+                    }
+                }
                 Text(
                     "Tap to select",
-                    style = TypeScale.SECONDARY.style(t.textDim.c()),
+                    style = TypeScale.SECONDARY.style(Color(0xFF94A3B8)),
                 )
             }
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0x14FFFFFF))
+                    .padding(bottom = 4.dp),
+            )
+
             LazyColumn(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 items(matches, key = { it.command }) { item ->
+                    val (badgeBg, badgeText) = slashBadgeColors(item.badge)
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF191B22))
+                            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(14.dp))
                             .clickable { onSelect(item) }
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text(item.icon, style = TypeScale.BODY.style(t.text.c()))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0x14FFFFFF))
+                                .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(item.icon, style = TextStyle(fontSize = 15.sp))
+                        }
+
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
                                 Text(
                                     item.command,
-                                    style = TypeScale.BODY.style(t.text.c()).copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold),
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFFF1F5F9),
+                                    ),
                                 )
-                                Text(
-                                    item.badge,
-                                    Modifier.clip(RoundedCornerShape(6.dp)).background(t.panel2.c()).padding(horizontal = 6.dp, vertical = 2.dp),
-                                    style = TypeScale.SECONDARY.style(t.textDim.c()),
-                                )
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(badgeBg)
+                                        .border(1.dp, badgeText.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 1.5.dp),
+                                ) {
+                                    Text(
+                                        item.badge,
+                                        style = TextStyle(
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = badgeText,
+                                        ),
+                                    )
+                                }
                             }
                             Text(
                                 item.description,
-                                style = TypeScale.SECONDARY.style(t.textDim.c()),
+                                style = TextStyle(fontSize = 11.5.sp, color = Color(0xFF94A3B8)),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (item.immediate) Color(0x266366F1) else Color(0x14FFFFFF))
+                                .border(
+                                    1.dp,
+                                    if (item.immediate) Color(0x4D818CF8) else Color(0x1FFFFFFF),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                if (item.immediate) "↵ Run" else "Tab",
+                                style = TextStyle(
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (item.immediate) Color(0xFFA5B4FC) else Color(0xFFCBD5E1),
+                                ),
                             )
                         }
                     }

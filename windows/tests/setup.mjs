@@ -19,6 +19,9 @@ registerHooks({
   // Vite imports JSON (src/i18n/*.json) without `with { type: "json" }`;
   // Node would refuse it, so it is handed over as a module.
   load(url, context, nextLoad) {
+    if (url.endsWith(".css")) {
+      return { format: "module", source: "export default {};", shortCircuit: true };
+    }
     if (url.startsWith("file:") && url.endsWith(".json") && !url.includes("/node_modules/")) {
       const source = readFileSync(fileURLToPath(url), "utf8");
       return { format: "module", source: `export default ${source};`, shortCircuit: true };

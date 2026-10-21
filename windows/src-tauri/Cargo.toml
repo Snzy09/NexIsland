@@ -86,6 +86,8 @@ windows = { version = "0.61", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Accessibility",
+  "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_Properties",
   # Flow dictation's keyboard hook.
   "Win32_System_LibraryLoader",
 ] }

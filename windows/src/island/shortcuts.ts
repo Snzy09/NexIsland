@@ -10,6 +10,7 @@
 import { Bridge, onEvent } from "../core/bridge";
 import type { BotEmoteName, IslandViewName } from "../core/layout";
 import { cyclePill, islandKeyAction, navigate, pillByNumber, type IslandKeyAction } from "../core/shortcuts";
+import { ChatSessionsManager } from "../core/chat-sessions";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 
@@ -165,6 +166,9 @@ export function runIslandKey(host: ShortcutHost, action: IslandKeyAction) {
     case "newChat":
       // Not while an answer is on its way: it would land in the new chat.
       if (State.stateOverride === "thinking") return;
+      try {
+        ChatSessionsManager.create();
+      } catch {}
       State.chatHistory = [];
       State.droppedFile = null;
       State.promptContext = null;

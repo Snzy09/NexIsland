@@ -5,7 +5,7 @@
 // centre of the main display inside a borderless, transparent, always-on-top
 // window that never takes focus.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -339,6 +339,37 @@ mod zoom_tests {
         assert!(super::is_tab_count_blocked(Some(4)));
         assert!(super::is_tab_count_blocked(Some(10)));
         assert!(!super::is_tab_count_blocked(None));
+    }
+
+    #[test]
+    fn test_bluetooth_status_query() {
+        let status = crate::platform::bluetooth_status();
+        println!("Bluetooth Status: {:?}", status);
+        // Ensure that if connected, level is either a valid percentage (0..=100) or None
+        if let Some(lvl) = status.level {
+            assert!(lvl <= 100);
+        }
+    }
+
+    #[test]
+    fn test_download_completion_detection() {
+        if let Some(dir) = crate::platform::downloads_dir() {
+            let test_target = dir.join("coucou_test_download_completion.bin");
+            let _ = std::fs::write(&test_target, b"test content data");
+
+            let res = super::find_completed_download(
+                Some(&test_target),
+                "coucou_test_download_completion.bin",
+                10,
+            );
+
+            let _ = std::fs::remove_file(&test_target);
+
+            assert!(res.is_some(), "Should find recently created file");
+            let (name, _, size) = res.unwrap();
+            assert_eq!(name, "coucou_test_download_completion.bin");
+            assert_eq!(size, 17);
+        }
     }
 }
 
@@ -720,12 +751,12 @@ pub fn spawn_battery_watcher(app: AppHandle) {
     });
 }
 
-/// Spawns a watcher checking connected bluetooth devices every 2 seconds
+/// Spawns a watcher checking connected bluetooth devices every 1 second
 pub fn spawn_bluetooth_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last_status = platform::bluetooth_status();
         loop {
-            std::thread::sleep(Duration::from_millis(2000));
+            std::thread::sleep(Duration::from_millis(1000));
             let status = platform::bluetooth_status();
             if status != last_status {
                 let mut emit_status = status.clone();
@@ -757,6 +788,112 @@ pub fn spawn_privacy_watcher(app: AppHandle) {
             }
         }
     });
+}
+
+/// Helper to locate a completed download in the Downloads directory.
+/// Checks the expected target path, duplicate suffixes ("file (1).ext"),
+/// and recently created/modified files in the downloads directory.
+fn find_completed_download(
+    target_path: Option<&Path>,
+    expected_name: &str,
+    min_bytes: u64,
+) -> Option<(String, PathBuf, u64)> {
+    let dir = platform::downloads_dir()?;
+
+    // 1. Direct check: target_path exists
+    if let Some(tp) = target_path {
+        if tp.is_file() {
+            if let Ok(meta) = tp.metadata() {
+                let name = tp.file_name().and_then(|n| n.to_str()).unwrap_or(expected_name);
+                if !name.starts_with("Unconfirmed ") {
+                    return Some((name.to_string(), tp.to_path_buf(), meta.len()));
+                }
+            }
+        }
+
+        // 2. Numbered duplicate check: "file (1).ext", "file (2).ext", etc.
+        if let Some(stem) = tp.file_stem().and_then(|s| s.to_str()) {
+            if !stem.starts_with("Unconfirmed ") {
+                let ext = tp.extension().and_then(|e| e.to_str()).unwrap_or("");
+                for i in 1..=10 {
+                    let cand_name = if ext.is_empty() {
+                        format!("{} ({})", stem, i)
+                    } else {
+                        format!("{} ({}).{}", stem, i, ext)
+                    };
+                    let cand_path = dir.join(&cand_name);
+                    if cand_path.is_file() {
+                        if let Ok(meta) = cand_path.metadata() {
+                            if let Ok(mod_time) = meta.modified() {
+                                if mod_time.elapsed().map(|d| d.as_secs() <= 30).unwrap_or(false) {
+                                    return Some((cand_name, cand_path, meta.len()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: Search the downloads directory for any non-temporary file created or modified in the last 25 seconds
+    let entries = std::fs::read_dir(&dir).ok()?;
+    let now = std::time::SystemTime::now();
+    let mut candidates: Vec<(String, PathBuf, u64, std::time::Duration)> = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+
+        // Exclude temporary download and partial files
+        let lower = name.to_lowercase();
+        if lower.ends_with(".crdownload")
+            || lower.ends_with(".part")
+            || lower.ends_with(".opdownload")
+            || lower.ends_with(".partial")
+            || lower.ends_with(".download")
+            || lower.ends_with(".tmp")
+            || lower.starts_with("unconfirmed ")
+        {
+            continue;
+        }
+
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() { continue };
+        let Ok(modified) = meta.modified() else { continue };
+        let Ok(elapsed) = now.duration_since(modified) else { continue };
+
+        if elapsed.as_secs() <= 25 {
+            candidates.push((name.to_string(), path, meta.len(), elapsed));
+        }
+    }
+
+    // If expected_name is known, prefer a file matching expected_name or its stem
+    if !expected_name.is_empty() && expected_name != "Mengunduh file..." {
+        let expected_stem = Path::new(expected_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(expected_name)
+            .to_lowercase();
+
+        for cand in &candidates {
+            if cand.0.eq_ignore_ascii_case(expected_name)
+                || cand.0.to_lowercase().contains(&expected_stem)
+            {
+                return Some((cand.0.clone(), cand.1.clone(), cand.2));
+            }
+        }
+    }
+
+    // Otherwise, pick the most recently modified non-temporary file
+    candidates.sort_by_key(|c| c.3);
+    for cand in candidates {
+        if cand.2 > 0 && (min_bytes == 0 || cand.2 >= min_bytes.saturating_sub(1024 * 1024)) {
+            return Some((cand.0, cand.1, cand.2));
+        }
+    }
+
+    None
 }
 
 /// Spawns a watcher checking active browser / file downloads every 1 second
@@ -795,6 +932,9 @@ pub fn spawn_download_watcher(app: AppHandle) {
                         smoothed_speed * 0.35 + raw_speed * 0.65
                     };
                     status.speed_bytes_per_sec = smoothed_speed.round() as u64;
+                } else if !was_active && status.downloaded_bytes > 0 {
+                    smoothed_speed = status.downloaded_bytes as f64 / dt;
+                    status.speed_bytes_per_sec = smoothed_speed.round() as u64;
                 } else {
                     smoothed_speed = 0.0;
                     status.speed_bytes_per_sec = 0;
@@ -805,29 +945,47 @@ pub fn spawn_download_watcher(app: AppHandle) {
                     last_name = status.filename.clone();
                 }
                 if let Some(ref tp) = status.target_path {
-                    last_target_path = Some(PathBuf::from(tp));
+                    if !tp.contains("Unconfirmed ") || last_target_path.is_none() {
+                        last_target_path = Some(PathBuf::from(tp));
+                    }
                 }
                 was_active = true;
                 let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
             } else if was_active {
                 inactive_ticks += 1;
                 if inactive_ticks >= 1 {
+                    // Brief sleep to allow browser to finish renaming and release file lock
+                    std::thread::sleep(Duration::from_millis(250));
+
+                    let completed = find_completed_download(
+                        last_target_path.as_deref(),
+                        &last_name,
+                        last_bytes,
+                    );
+
+                    if let Some((final_name, final_path, final_size)) = completed {
+                        crate::log::line(format!("[download] completed: {} ({} bytes)", final_name, final_size));
+                        let _ = app.emit_to(WINDOW_LABEL, "download-complete", &final_name);
+
+                        let mut final_status = status.clone();
+                        final_status.active = true;
+                        final_status.filename = final_name;
+                        final_status.speed_bytes_per_sec = 0;
+                        final_status.downloaded_bytes = final_size;
+                        final_status.total_bytes = Some(final_size);
+                        final_status.percent = Some(100);
+                        final_status.target_path = Some(final_path.to_string_lossy().to_string());
+                        let _ = app.emit_to(WINDOW_LABEL, "download-status", final_status);
+                    } else {
+                        let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
+                    }
+
                     was_active = false;
                     inactive_ticks = 0;
                     last_bytes = 0;
                     smoothed_speed = 0.0;
-
-                    let target = last_target_path.take();
-                    let completed_name = std::mem::take(&mut last_name);
-
-                    // Check if the final file actually exists!
-                    let actually_completed = target.as_ref().map(|p| p.is_file()).unwrap_or(false);
-                    let is_valid_name = !completed_name.is_empty() && completed_name != "Mengunduh file...";
-
-                    if actually_completed && is_valid_name {
-                        let _ = app.emit_to(WINDOW_LABEL, "download-complete", completed_name);
-                    }
-                    let _ = app.emit_to(WINDOW_LABEL, "download-status", status);
+                    last_name.clear();
+                    last_target_path = None;
                 }
             }
         }

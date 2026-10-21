@@ -135,3 +135,87 @@ test("a web link opens through Rust; anything else is plain text", () => {
   assert.deepEqual(sent("open_url"), [{ url: "https://example.com/docs" }]);
   assert.match(root.textContent, /or this\.$/);
 });
+
+test("rich formatting: bold, underline, strikethrough, highlight, kbd, math, table and cards", () => {
+  const root = dom.root();
+  const md = [
+    "Here is **bold**, <u>underlined</u>, ++also underlined++, ~~strike~~, ==highlight==, <kbd>Ctrl+C</kbd>, $E=mc^2$.",
+    "",
+    "$$",
+    "\\int_0^1 x^2 dx = \\frac{1}{3}",
+    "$$",
+    "",
+    "| Col 1 | Col 2 |",
+    "| :--- | ---: |",
+    "| Item 1 | 100 |",
+    "",
+    "> [!NOTE]",
+    "> A helpful note card",
+    "",
+    "- [ ] Pending task",
+    "- [x] Done task",
+  ].join("\n");
+
+  renderMarkdown(root, md);
+
+  // Check inline elements
+  assert.equal(root.find("STRONG").length >= 1, true);
+  assert.equal(root.find("U").length >= 2, true);
+  assert.equal(root.find("DEL").length >= 1, true);
+  assert.equal(root.find("MARK").length >= 1, true);
+  assert.equal(root.find("KBD").length >= 1, true);
+  assert.equal(root.find(".md-math-inline").length >= 1, true);
+
+  // Check block elements
+  assert.equal(root.find(".md-math-wrap").length >= 1, true);
+  assert.equal(root.find(".md-table").length >= 1, true);
+  assert.equal(root.find(".md-th").length, 2);
+  assert.equal(root.find(".md-td").length, 2);
+  assert.equal(root.find(".md-card").length >= 1, true);
+  assert.equal(root.find(".md-card-note").length >= 1, true);
+  assert.equal(root.find(".md-task-item").length, 2);
+  assert.equal(root.find(".checked").length >= 1, true);
+});
+
+test("display and inline math parsing cleans up double dollars and avoids stray dollar signs", () => {
+  // Test inline parsing of $$ and $
+  const inlinesDouble = parseInline("$$ X = n \\times N_A $$");
+  assert.equal(inlinesDouble.length, 1);
+  assert.equal(inlinesDouble[0].kind, "math");
+  assert.equal(inlinesDouble[0].math, "X = n \\times N_A");
+  assert.equal(inlinesDouble[0].display, true);
+
+  const inlinesSingle = parseInline("Rumus ($X$): $n = \\frac{X}{N_A}$");
+  const mathNodes = inlinesSingle.filter((n) => n.kind === "math");
+  assert.equal(mathNodes.length, 2);
+  assert.equal(mathNodes[0].math, "X");
+  assert.equal(mathNodes[1].math, "n = \\frac{X}{N_A}");
+
+  // Test block parsing with indentation under bullet list
+  const text = [
+    "• Rumus Mencari Jumlah Partikel ( X ):",
+    "  $$ X = n \\times N_A $$",
+    "",
+    "• Rumus Mencari Jumlah Mol ( n ):",
+    "  $$ n = \\frac{X}{N_A} $$",
+  ].join("\n");
+
+  const blocks = parseMarkdown(text);
+  assert.equal(blocks.length, 4);
+  assert.equal(blocks[0].kind, "item");
+  assert.equal(blocks[1].kind, "math");
+  assert.equal(blocks[1].math, "X = n \\times N_A");
+  assert.equal(blocks[2].kind, "item");
+  assert.equal(blocks[3].kind, "math");
+  assert.equal(blocks[3].math, "n = \\frac{X}{N_A}");
+
+  // Test rendering leaves no stray dollar signs in plain text
+  const root = dom.root();
+  renderMarkdown(root, text);
+  // No text node should have a lone "$" in it
+  for (const child of root.children) {
+    if (child.className === "md-p") {
+      assert.equal(child.textContent.includes("$"), false);
+    }
+  }
+});

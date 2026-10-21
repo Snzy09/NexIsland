@@ -15,6 +15,7 @@ import {
 } from "../core/providers";
 import { Sound } from "../core/sound";
 import { State, type ChatMessage, type ChatStep } from "../core/state";
+import { ChatSessionsManager } from "../core/chat-sessions";
 import type { ViewHost } from "./views";
 import { N_, t, tl } from "../i18n/i18n";
 
@@ -114,11 +115,22 @@ function renderStepsWidget(steps: ChatStep[], active = false): HTMLElement {
 
 function bubble(message: ChatMessage): HTMLElement {
   if (message.role === "user") {
-    return h(
-      "div",
-      { class: "chat-row user" },
-      h("div", { class: "bubble", text: message.content }),
-    );
+    const bubbleEl = h("div", { class: "bubble" });
+    if (message.image) {
+      const img = h("img", {
+        class: "chat-bubble-image",
+        src: message.image,
+        alt: "Attachment",
+      });
+      img.addEventListener("click", () => {
+        window.open(message.image, "_blank");
+      });
+      bubbleEl.append(img);
+    }
+    if (message.content) {
+      bubbleEl.append(h("span", { class: "chat-bubble-text", text: message.content }));
+    }
+    return h("div", { class: "chat-row user" }, bubbleEl);
   }
   const reply = h("div", { class: "reply" });
   renderMarkdown(reply, message.content);
@@ -536,18 +548,335 @@ function createLiveStepsComponent(): LiveStepsComponent {
 export function buildPrompt(onHeightChange: () => void): ViewHost {
   const chipRow = h("div", { class: "chip-row" });
   const log = h("div", { class: "chat-log" });
+
+  // ── Sessions & Header Bar ──
+  const sessionTitleSpan = h("span", { class: "chat-session-btn-title", text: ChatSessionsManager.getActive().title });
+  const sessionBtn = h(
+    "button",
+    { class: "chat-session-btn", type: "button", title: "Chat sessions history" },
+    svg(ICONS.bubble, 11),
+    sessionTitleSpan,
+    svg(ICONS.chevronUpDown, 8, { stroke: 2 }),
+  );
+
+  const newChatBtn = h(
+    "button",
+    { class: "chat-icon-btn", type: "button", title: "New Chat Session" },
+    svg(ICONS.plus, 12),
+  );
+
+  let ttsEnabled = false;
+  try {
+    if (typeof localStorage !== "undefined" && localStorage) {
+      ttsEnabled = localStorage.getItem("coucou_tts_enabled") === "true";
+    }
+  } catch {}
+
+  const ttsBtn = h(
+    "button",
+    {
+      class: ttsEnabled ? "chat-icon-btn active" : "chat-icon-btn",
+      type: "button",
+      title: "Voice readout (TTS)",
+    },
+    svg(ttsEnabled ? ICONS.speakerOn : ICONS.speakerOff, 12),
+  );
+
+  ttsBtn.addEventListener("click", () => {
+    ttsEnabled = !ttsEnabled;
+    try {
+      if (typeof localStorage !== "undefined" && localStorage) {
+        localStorage.setItem("coucou_tts_enabled", String(ttsEnabled));
+      }
+    } catch {}
+    ttsBtn.classList.toggle("active", ttsEnabled);
+    clear(ttsBtn);
+    ttsBtn.append(svg(ttsEnabled ? ICONS.speakerOn : ICONS.speakerOff, 12));
+    Sound.play("blip");
+  });
+
+  const headerActions = h("div", { class: "chat-header-actions" }, ttsBtn, newChatBtn);
+  const headerBar = h("div", { class: "chat-header-bar" }, sessionBtn, headerActions);
+
+  // Sessions Menu Overlay
+  const sessionsMenu = h("div", { class: "chat-sessions-menu" });
+  sessionsMenu.style.display = "none";
+
+  function updateSessionHeader() {
+    sessionTitleSpan.textContent = ChatSessionsManager.getActive().title;
+  }
+
+  function renderSessionsList() {
+    clear(sessionsMenu);
+    const menuHeader = h(
+      "div",
+      { class: "chat-sessions-menu-header" },
+      h("span", { text: "Chat Sessions" }),
+      h("button", {
+        class: "picker-link",
+        type: "button",
+        text: "+ New",
+        onclick: (e: Event) => {
+          e.stopPropagation();
+          startNewChat();
+          sessionsMenu.style.display = "none";
+        },
+      }),
+    );
+    const list = h("div", { class: "chat-sessions-list" });
+    const all = ChatSessionsManager.getAll();
+    const activeId = ChatSessionsManager.getActiveId();
+
+    for (const sess of all) {
+      const isActive = sess.id === activeId;
+      const titleSpan = h("span", { class: "chat-session-item-title", text: sess.title });
+      const dateStr = new Date(sess.updatedAt).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const countStr = `${sess.messages.length} msg${sess.messages.length === 1 ? "" : "s"}`;
+      const sub = h("span", { class: "chat-session-item-sub", text: `${dateStr} • ${countStr}` });
+      const info = h("div", { class: "chat-session-info" }, titleSpan, sub);
+
+      const delBtn = h("button", {
+        class: "chat-session-del-btn",
+        type: "button",
+        title: "Delete session",
+        onclick: (e: Event) => {
+          e.stopPropagation();
+          ChatSessionsManager.delete(sess.id);
+          if (sess.id === activeId) {
+            State.chatHistory = [...ChatSessionsManager.getActive().messages];
+            renderedCount = -1;
+            doSync();
+          }
+          renderSessionsList();
+          updateSessionHeader();
+          Sound.play("blip");
+        },
+      }, svg(ICONS.xmark, 10));
+
+      const row = h(
+        "div",
+        { class: isActive ? "chat-session-row active" : "chat-session-row" },
+        info,
+        delBtn,
+      );
+
+      row.addEventListener("click", () => {
+        ChatSessionsManager.switch(sess.id);
+        State.chatHistory = [...sess.messages];
+        renderedCount = -1;
+        updateSessionHeader();
+        sessionsMenu.style.display = "none";
+        doSync();
+        Sound.play("pop");
+      });
+
+      list.append(row);
+    }
+
+    sessionsMenu.append(menuHeader, list);
+  }
+
+  sessionBtn.addEventListener("click", () => {
+    if (sessionsMenu.style.display === "none") {
+      renderSessionsList();
+      sessionsMenu.style.display = "flex";
+    } else {
+      sessionsMenu.style.display = "none";
+    }
+  });
+
+  function startNewChat() {
+    ChatSessionsManager.create();
+    State.chatHistory = [];
+    renderedCount = -1;
+    clear(log);
+    currentSteps = null;
+    clearPendingImage();
+    updateSessionHeader();
+    Sound.play("pop");
+    void Bridge.chatReset().catch(() => {});
+    State.notify();
+    onHeightChange();
+    input.focus();
+  }
+
+  newChatBtn.addEventListener("click", () => {
+    startNewChat();
+  });
+
+  // ── Image Attachment ──
+  let pendingImage: { name: string; dataUrl: string } | null = null;
+  const fileInput = h("input", {
+    type: "file",
+    accept: "image/*",
+    style: "display:none",
+  }) as HTMLInputElement;
+
+  const imagePreviewThumb = h("img", { class: "chat-preview-thumb" }) as HTMLImageElement;
+  const imagePreviewName = h("span", { class: "chat-preview-name" });
+  const imagePreviewHint = h("span", { class: "chat-preview-hint", text: "Image ready to send" });
+  const imagePreviewClose = h("button", {
+    class: "chat-preview-close",
+    type: "button",
+    title: "Remove image",
+    onclick: () => clearPendingImage(),
+  }, "✕");
+
+  const imagePreviewMeta = h("div", { class: "chat-preview-meta" }, imagePreviewName, imagePreviewHint);
+  const imagePreview = h("div", { class: "chat-image-preview" }, imagePreviewThumb, imagePreviewMeta, imagePreviewClose);
+  imagePreview.style.display = "none";
+
+  function setPendingImage(name: string, dataUrl: string) {
+    pendingImage = { name, dataUrl };
+    imagePreviewThumb.src = dataUrl;
+    imagePreviewName.textContent = name;
+    imagePreview.style.display = "flex";
+    onHeightChange();
+  }
+
+  function clearPendingImage() {
+    pendingImage = null;
+    imagePreview.style.display = "none";
+    fileInput.value = "";
+    onHeightChange();
+  }
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      if (typeof result === "string") {
+        setPendingImage(file.name, result);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const attachBtn = h(
+    "button",
+    { class: "chat-attach-btn", type: "button", title: "Attach Image" },
+    svg(ICONS.photo, 14),
+  );
+  attachBtn.addEventListener("click", () => {
+    fileInput.click();
+  });
+
+  // ── Voice Input (Speech-to-Text) ──
+  const micBtn = h(
+    "button",
+    { class: "chat-mic-btn", type: "button", title: "Voice input (Speech to Text)" },
+    svg(ICONS.mic, 13),
+  );
+
+  let isListening = false;
+  let recognition: any = null;
+
+  function stopListening() {
+    if (recognition) {
+      try { recognition.stop(); } catch {}
+      recognition = null;
+    }
+    isListening = false;
+    micBtn.classList.remove("listening");
+    input.placeholder = t(State.chatHistory.length === 0 ? STRINGS.placeholderFirst : STRINGS.placeholderNext);
+  }
+
+  function startListening() {
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert("Speech recognition is not supported in this browser/environment.");
+      return;
+    }
+
+    try {
+      recognition = new SpeechRec();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = State.settings?.language === "id" ? "id-ID" : "en-US";
+
+      recognition.onstart = () => {
+        isListening = true;
+        micBtn.classList.add("listening");
+        input.placeholder = "Listening… speak now…";
+        Sound.play("blip");
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          input.value = transcript.trim();
+        }
+      };
+
+      recognition.onerror = () => {
+        stopListening();
+      };
+
+      recognition.onend = () => {
+        stopListening();
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn("Speech recognition failed:", err);
+      stopListening();
+    }
+  }
+
+  micBtn.addEventListener("click", () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  });
+
   const input = h("input", {
     type: "text",
     class: "chat-input",
     placeholder: t(STRINGS.placeholderFirst),
     spellcheck: "false",
   }) as HTMLInputElement;
+
+  // Support paste image into chat
+  input.addEventListener("paste", (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const res = ev.target?.result;
+            if (typeof res === "string") {
+              setPendingImage(file.name || "Pasted image.png", res);
+            }
+          };
+          reader.readAsDataURL(file);
+          e.preventDefault();
+          break;
+        }
+      }
+    }
+  });
+
   const send = h("button", { class: "send-btn", title: tl(STRINGS.send) }, svg(ICONS.arrowUp, 11));
-  const bar = h("div", { class: "chat-bar" }, input, send);
+  const bar = h("div", { class: "chat-bar" }, attachBtn, fileInput, input, micBtn, send);
 
   const slashMenu = h("div", { class: "slash-menu" });
   slashMenu.style.display = "none";
-  const barWrap = h("div", { class: "chat-bar-wrap" }, slashMenu, bar);
+  const barWrap = h("div", { class: "chat-bar-wrap" }, slashMenu, imagePreview, bar);
 
   let customSkills: Skill[] = [];
   let skillsRequested = false;
@@ -592,24 +921,66 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     const header = h(
       "div",
       { class: "slash-menu-header" },
-      h("span", { text: "Slash Commands" }),
-      h("span", { class: "slash-menu-hint", text: "↑↓ Navigate  •  ↵ / Tab Select  •  Esc Close" }),
+      h(
+        "div",
+        { class: "slash-menu-header-left" },
+        h("span", { class: "slash-menu-header-icon", text: "⌘" }),
+        h("span", { class: "slash-menu-header-title", text: "Slash Commands" }),
+        h("span", { class: "slash-menu-count-badge", text: String(currentSlashMatches.length) }),
+      ),
+      h(
+        "div",
+        { class: "slash-menu-hint" },
+        h("span", { class: "slash-hint-key", text: "↑↓" }),
+        h("span", { class: "slash-hint-label", text: "Navigate" }),
+        h("span", { class: "slash-hint-sep", text: "•" }),
+        h("span", { class: "slash-hint-key", text: "↵" }),
+        h("span", { class: "slash-hint-label", text: "Select" }),
+        h("span", { class: "slash-hint-sep", text: "•" }),
+        h("span", { class: "slash-hint-key", text: t("Esc") }),
+        h("span", { class: "slash-hint-label", text: t("Close") }),
+      ),
     );
     slashMenu.append(header);
 
+    const list = h("div", { class: "slash-menu-list" });
+
     currentSlashMatches.forEach((item, index) => {
       const isActive = index === selectedSlashIndex;
+      const badgeSlug = (item.badge || "").toLowerCase().trim();
+
+      const iconBox = h(
+        "div",
+        { class: "slash-item-icon-box" },
+        h("span", { class: "slash-item-icon", text: item.icon }),
+      );
+
+      const topRow = h(
+        "div",
+        { class: "slash-item-top-row" },
+        h("span", { class: "slash-item-name", text: item.name }),
+        h("span", { class: "slash-item-badge", "data-badge": badgeSlug, text: item.badge }),
+      );
+
+      const desc = h("div", { class: "slash-item-desc", text: item.description, title: item.description });
+
+      const content = h("div", { class: "slash-item-content" }, topRow, desc);
+
+      const keyCap = h("span", {
+        class: item.immediate ? "slash-item-key immediate" : "slash-item-key",
+        text: item.immediate ? "↵ Run" : "Tab",
+        title: item.immediate ? "Press Enter to execute immediately" : "Press Tab to insert into input",
+      });
+
       const row = h(
         "button",
         {
           class: isActive ? "slash-item active" : "slash-item",
           type: "button",
         },
-        h("span", { class: "slash-item-icon", text: item.icon }),
-        h("span", { class: "slash-item-name", text: item.name }),
-        h("span", { class: "slash-item-badge", text: item.badge }),
-        h("span", { class: "slash-item-desc", text: item.description }),
-        h("span", { class: "slash-item-key", text: item.immediate ? "↵" : "Tab" }),
+        iconBox,
+        content,
+        keyCap,
       );
 
       row.addEventListener("mouseenter", () => {
@@ -626,9 +997,10 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         pickSlashItem(item);
       });
 
-      slashMenu.append(row);
+      list.append(row);
     });
 
+    slashMenu.append(list);
     scrollActiveIntoView();
   }
 
@@ -696,7 +1068,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     body.classList.toggle("picking", picker.isOpen);
     drawModelButton();
   });
-  body.append(chipRow, log, picker.el, modelRow, barWrap);
+  body.append(headerBar, sessionsMenu, chipRow, log, picker.el, modelRow, barWrap);
 
   const el = h("div", { class: "view" }, h("div", { class: "card wash chat-card" }, body));
   (el.querySelector(".card") as HTMLElement).style.setProperty("--wash", "rgba(99,102,241,0.5)");
@@ -753,6 +1125,9 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         steps: currentSteps ? currentSteps.getSteps() : undefined,
       });
     }
+
+    ChatSessionsManager.saveActive(State.chatHistory);
+    updateSessionHeader();
 
     currentSteps = null;
     renderedCount = -1;
@@ -828,23 +1203,18 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
 
   async function submit() {
     const query = input.value.trim();
-    if (!query || sending) return;
+    if ((!query && !pendingImage) || sending) return;
     if (picker.isOpen) picker.close();
+    sessionsMenu.style.display = "none";
     hideSlashMenu();
+    stopListening();
+
+    const imageToSend = pendingImage?.dataUrl;
+    clearPendingImage();
     input.value = "";
 
     if (query === "/clear") {
-      State.chatHistory = [];
-      renderedCount = -1;
-      clear(log);
-      currentSteps = null;
-      sending = false;
-      setSendButtonMode(false);
-      drawModelButton();
-      Sound.play("blip");
-      void Bridge.chatReset().catch(() => {});
-      State.notify();
-      onHeightChange();
+      startNewChat();
       return;
     }
 
@@ -855,7 +1225,14 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     drawModelButton();
     Sound.play("send");
 
-    State.chatHistory.push({ id: nextId++, role: "user", content: query });
+    State.chatHistory.push({
+      id: nextId++,
+      role: "user",
+      content: query,
+      image: imageToSend,
+    });
+    ChatSessionsManager.saveActive(State.chatHistory);
+    updateSessionHeader();
     State.stateOverride = "thinking";
     State.notify();
     onHeightChange();
@@ -875,8 +1252,25 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
           content: reply.text,
           steps: steps && steps.length > 0 ? steps : undefined,
         });
+        ChatSessionsManager.saveActive(State.chatHistory);
+        updateSessionHeader();
         State.stateOverride = null;
         Sound.play("finish");
+
+        // Voice Readout (TTS)
+        if (ttsEnabled && typeof window !== "undefined" && "speechSynthesis" in window) {
+          try {
+            window.speechSynthesis.cancel();
+            const cleanText = reply.text
+              .replace(/[*#`_~[\]()$|]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 400);
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            utterance.lang = State.settings?.language === "id" ? "id-ID" : "en-US";
+            window.speechSynthesis.speak(utterance);
+          } catch {}
+        }
       }
     } catch (err) {
       State.stateOverride = null;
@@ -900,6 +1294,8 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
           content,
           steps: activeSteps() ? activeSteps()!.getSteps() : undefined,
         });
+        ChatSessionsManager.saveActive(State.chatHistory);
+        updateSessionHeader();
       }
     } finally {
       sending = false;
@@ -1001,40 +1397,45 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     }
   });
 
+  function doSync() {
+    const file = State.droppedFile;
+    const wantChip = file?.name ?? "";
+    if (chipRow.dataset.label !== wantChip) {
+      chipRow.dataset.label = wantChip;
+      clear(chipRow);
+      if (wantChip) chipRow.append(contextChip(wantChip));
+    }
+
+    const thinking = State.stateOverride === "thinking";
+    const count = State.chatHistory.length + (thinking ? 0.5 : 0);
+    if (count !== renderedCount && !live) {
+      renderedCount = count;
+      clear(log);
+      for (const m of State.chatHistory) log.append(bubble(m));
+      if (currentSteps?.el) {
+        log.append(currentSteps.el);
+      }
+      if (thinking) log.append(typingDots());
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Leaving the chat folds the picker away.
+    if (State.view !== "prompt") {
+      if (picker.isOpen) picker.close();
+      sessionsMenu.style.display = "none";
+      hideSlashMenu();
+      stopListening();
+    }
+    updateSessionHeader();
+    drawModelButton();
+
+    input.placeholder = t(State.chatHistory.length === 0 ? STRINGS.placeholderFirst : STRINGS.placeholderNext);
+    input.disabled = sending;
+  }
+
   return {
     el,
-    sync() {
-      const file = State.droppedFile;
-      const wantChip = file?.name ?? "";
-      if (chipRow.dataset.label !== wantChip) {
-        chipRow.dataset.label = wantChip;
-        clear(chipRow);
-        if (wantChip) chipRow.append(contextChip(wantChip));
-      }
-
-      const thinking = State.stateOverride === "thinking";
-      const count = State.chatHistory.length + (thinking ? 0.5 : 0);
-      if (count !== renderedCount && !live) {
-        renderedCount = count;
-        clear(log);
-        for (const m of State.chatHistory) log.append(bubble(m));
-        if (currentSteps?.el) {
-          log.append(currentSteps.el);
-        }
-        if (thinking) log.append(typingDots());
-        log.scrollTop = log.scrollHeight;
-      }
-
-      // Leaving the chat folds the picker away.
-      if (State.view !== "prompt") {
-        if (picker.isOpen) picker.close();
-        hideSlashMenu();
-      }
-      drawModelButton();
-
-      input.placeholder = t(State.chatHistory.length === 0 ? STRINGS.placeholderFirst : STRINGS.placeholderNext);
-      input.disabled = sending;
-    },
+    sync: doSync,
     focus() {
       input.focus();
       input.select();

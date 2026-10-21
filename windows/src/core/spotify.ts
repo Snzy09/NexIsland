@@ -115,6 +115,18 @@ export function islandDances(o: {
   return o.mode === "expanded" && o.view === "overview" && o.focusId === SPOTIFY_ID;
 }
 
+/**
+ * True when the island is expanded and actively showing the Spotify tab / card.
+ */
+export function isSpotifyTab(o: {
+  mode: IslandMode;
+  view: IslandViewName;
+  focusId?: string | null;
+  focusTaskId?: string | null;
+}): boolean {
+  return o.mode === "expanded" && o.view === "overview" && (o.focusTaskId === SPOTIFY_ID || o.focusId === SPOTIFY_ID);
+}
+
 /** Mochi on the desktop: the compact island's rules (DesktopMochi.swift). */
 export function desktopDances(music: boolean, state: BotStateName): boolean {
   return music && DANCE_STATES.has(state);

@@ -732,18 +732,190 @@ pub struct BluetoothStatus {
 }
 
 pub fn bluetooth_status() -> BluetoothStatus {
-    match winrt_bluetooth_status() {
-        Ok(status) => {
-            if status.connected {
-                return status;
+    // 1. Query WinRT for connected Bluetooth or BLE devices
+    let winrt = winrt_bluetooth_status().ok();
+
+    // 2. Query PnP / SetupAPI for present Bluetooth devices with battery percentage (DEVPKEY_Device_BatteryPercent)
+    let pnp_devices = get_pnp_bluetooth_devices();
+
+    if let Some(mut status) = winrt.filter(|s| s.connected) {
+        // If WinRT didn't extract battery percentage, look up from PnP device properties
+        if status.level.is_none() {
+            for (pnp_name, pnp_level) in &pnp_devices {
+                if pnp_level.is_some() {
+                    let cleaned = clean_bt_name(pnp_name);
+                    if cleaned.eq_ignore_ascii_case(&status.name)
+                        || status.name.to_lowercase().contains(&cleaned.to_lowercase())
+                        || cleaned.to_lowercase().contains(&status.name.to_lowercase())
+                    {
+                        status.level = *pnp_level;
+                        break;
+                    }
+                }
+            }
+            // If still no level matched by name, check if any single PnP Bluetooth device reported battery
+            if status.level.is_none() {
+                if let Some((_, Some(lvl))) = pnp_devices.iter().find(|(_, lvl)| lvl.is_some()) {
+                    status.level = Some(*lvl);
+                }
             }
         }
-        Err(e) => {
-            crate::log::line(format!("[bluetooth] winrt_bluetooth_status failed: {:?}", e));
+        return status;
+    }
+
+    // 3. If WinRT didn't return connected, check if PnP has a currently active/present Bluetooth device
+    for (pnp_name, pnp_level) in pnp_devices {
+        let cleaned = clean_bt_name(&pnp_name);
+        if !cleaned.is_empty() && !cleaned.eq_ignore_ascii_case("unknown") {
+            let device_type = classify_bt_device(&cleaned);
+            return BluetoothStatus {
+                connected: true,
+                name: cleaned,
+                level: pnp_level,
+                device_type,
+            };
         }
     }
 
     BluetoothStatus::default()
+}
+
+fn get_pnp_bluetooth_devices() -> Vec<(String, Option<u8>)> {
+    use windows::Win32::Devices::DeviceAndDriverInstallation::{
+        SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo, SetupDiGetClassDevsW,
+        SetupDiGetDevicePropertyW, DIGCF_ALLCLASSES, DIGCF_PRESENT,
+        SP_DEVINFO_DATA,
+    };
+    use windows::Win32::Devices::Properties::DEVPROPTYPE;
+    use windows::Win32::Foundation::DEVPROPKEY;
+    use windows::core::PCWSTR;
+
+    // DEVPKEY_Device_BatteryPercent: {104ea319-6ee2-4701-bd47-8ddbf425bbe5}, 2
+    let pkey_battery = DEVPROPKEY {
+        fmtid: windows::core::GUID::from_u128(0x104ea319_6ee2_4701_bd47_8ddbf425bbe5),
+        pid: 2,
+    };
+    // DEVPKEY_NAME: {b725f130-47ef-101a-a5f1-02608c9eebac}, 10
+    let pkey_name = DEVPROPKEY {
+        fmtid: windows::core::GUID::from_u128(0xb725f130_47ef_101a_a5f1_02608c9eebac),
+        pid: 10,
+    };
+    // DEVPKEY_Device_FriendlyName: {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
+    let pkey_friendly_name = DEVPROPKEY {
+        fmtid: windows::core::GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
+        pid: 14,
+    };
+
+    let mut results = Vec::new();
+
+    for enumerator in &["BTHENUM", "BTHLE", "BTHHFENUM"] {
+        let enum_u16: Vec<u16> = enumerator.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let hdev = match SetupDiGetClassDevsW(
+                None,
+                PCWSTR(enum_u16.as_ptr()),
+                None,
+                DIGCF_PRESENT | DIGCF_ALLCLASSES,
+            ) {
+                Ok(h) => h,
+                Err(_) => continue,
+            };
+
+            let mut dev_data = SP_DEVINFO_DATA {
+                cbSize: std::mem::size_of::<SP_DEVINFO_DATA>() as u32,
+                ..Default::default()
+            };
+
+            let mut idx = 0;
+            while SetupDiEnumDeviceInfo(hdev, idx, &mut dev_data).is_ok() {
+                idx += 1;
+
+                let mut prop_type = DEVPROPTYPE(0);
+                let mut buf = [0u8; 512];
+                let mut req_size = 0u32;
+
+                let mut dev_name = String::new();
+                if SetupDiGetDevicePropertyW(
+                    hdev,
+                    &dev_data,
+                    &pkey_friendly_name,
+                    &mut prop_type,
+                    Some(&mut buf),
+                    Some(&mut req_size),
+                    0,
+                ).is_ok() || SetupDiGetDevicePropertyW(
+                    hdev,
+                    &dev_data,
+                    &pkey_name,
+                    &mut prop_type,
+                    Some(&mut buf),
+                    Some(&mut req_size),
+                    0,
+                ).is_ok() {
+                    let len = (req_size as usize) / 2;
+                    if len > 0 && len <= buf.len() / 2 {
+                        let u16_slice = std::slice::from_raw_parts(buf.as_ptr() as *const u16, len);
+                        dev_name = String::from_utf16_lossy(u16_slice)
+                            .trim_matches(char::from(0))
+                            .trim()
+                            .to_string();
+                    }
+                }
+
+                if dev_name.is_empty() || dev_name.eq_ignore_ascii_case("unknown") {
+                    continue;
+                }
+
+                // Check battery property
+                let mut bat_type = DEVPROPTYPE(0);
+                let mut bat_buf = [0u8; 16];
+                let mut bat_req_size = 0u32;
+                let mut level = None;
+                if SetupDiGetDevicePropertyW(
+                    hdev,
+                    &dev_data,
+                    &pkey_battery,
+                    &mut bat_type,
+                    Some(&mut bat_buf),
+                    Some(&mut bat_req_size),
+                    0,
+                ).is_ok() && bat_req_size > 0 {
+                    let b = bat_buf[0];
+                    if b <= 100 {
+                        level = Some(b);
+                    }
+                }
+
+                results.push((dev_name, level));
+            }
+
+            let _ = SetupDiDestroyDeviceInfoList(hdev);
+        }
+    }
+
+    // Sort devices so those with a valid battery reading come first
+    results.sort_by(|a, b| b.1.is_some().cmp(&a.1.is_some()));
+    results
+}
+
+fn clean_bt_name(raw: &str) -> String {
+    let mut s = raw.trim();
+    for suffix in &[
+        " Hands-Free AG",
+        " Hands-Free HF Audio",
+        " Hands-Free HF",
+        " Hands-Free",
+        " Avrcp Transport",
+        " A2DP SNK",
+        " Audio Gateway Service",
+        " Personal Area Network Service",
+        " Phonebook Access Pse Service",
+    ] {
+        if let Some(stripped) = s.strip_suffix(suffix) {
+            s = stripped.trim();
+        }
+    }
+    s.to_string()
 }
 
 fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
@@ -763,7 +935,7 @@ fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
                     if let Ok(item) = collection.GetAt(i) {
                         let name = item.Name().unwrap_or_default().to_string();
                         if !name.is_empty() && name != "Unknown" {
-                            let level = extract_battery_level(&item).or(Some(100));
+                            let level = extract_battery_level(&item);
                             let device_type = classify_bt_device(&name);
                             return Ok(BluetoothStatus {
                                 connected: true,
@@ -787,7 +959,7 @@ fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
                     if let Ok(item) = collection.GetAt(i) {
                         let name = item.Name().unwrap_or_default().to_string();
                         if !name.is_empty() && name != "Unknown" {
-                            let level = extract_battery_level(&item).or(Some(100));
+                            let level = extract_battery_level(&item);
                             let device_type = classify_bt_device(&name);
                             return Ok(BluetoothStatus {
                                 connected: true,
@@ -815,7 +987,7 @@ fn winrt_bluetooth_status() -> windows::core::Result<BluetoothStatus> {
                 if let Ok(item) = collection.GetAt(i) {
                     let name = item.Name().unwrap_or_default().to_string();
                     if !name.is_empty() && name != "Unknown" {
-                        let level = extract_battery_level(&item).or(Some(100));
+                        let level = extract_battery_level(&item);
                         let device_type = classify_bt_device(&name);
                         return Ok(BluetoothStatus {
                             connected: true,
@@ -1202,7 +1374,7 @@ pub fn check_download_status() -> DownloadStatus {
     let Some(dir) = downloads_dir() else {
         return DownloadStatus::default();
     };
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return DownloadStatus::default();
     };
 
@@ -1219,8 +1391,9 @@ pub fn check_download_status() -> DownloadStatus {
         let is_part = name.ends_with(".part");
         let is_opdownload = name.ends_with(".opdownload");
         let is_download = name.ends_with(".download");
+        let is_partial = name.ends_with(".partial");
 
-        if !is_crdownload && !is_part && !is_opdownload && !is_download {
+        if !is_crdownload && !is_part && !is_opdownload && !is_download && !is_partial {
             continue;
         }
 
@@ -1238,23 +1411,26 @@ pub fn check_download_status() -> DownloadStatus {
         };
 
         // An active download MUST have been written to recently.
-        // Stale, cancelled, or dead files (> 10s since last write) are ignored.
-        if elapsed > std::time::Duration::from_secs(10) {
+        // Stale or dead files (> 30s since last write) are ignored.
+        if elapsed > std::time::Duration::from_secs(30) {
             continue;
         }
 
         let (clean_name, target_file) = if is_crdownload {
             let clean = name.strip_suffix(".crdownload").unwrap_or(name);
-            (clean, path.with_extension(""))
+            (clean, dir.join(clean))
         } else if is_part {
             let clean = name.strip_suffix(".part").unwrap_or(name);
-            (clean, path.with_extension(""))
+            (clean, dir.join(clean))
         } else if is_opdownload {
             let clean = name.strip_suffix(".opdownload").unwrap_or(name);
-            (clean, path.with_extension(""))
+            (clean, dir.join(clean))
+        } else if is_partial {
+            let clean = name.strip_suffix(".partial").unwrap_or(name);
+            (clean, dir.join(clean))
         } else {
             let clean = name.strip_suffix(".download").unwrap_or(name);
-            (clean, path.with_extension(""))
+            (clean, dir.join(clean))
         };
 
         let is_unconfirmed = clean_name.starts_with("Unconfirmed ");

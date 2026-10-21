@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { emit, sent } from "./tauri.mjs";
 import { installFakeDom } from "./fakedom.mjs";
 import {
-  IDLE_SPOTIFY, SPOTIFY_ID, Spotify, currentArtwork, desktopDances, formatTime, isAd, islandDances,
+  IDLE_SPOTIFY, SPOTIFY_ID, Spotify, currentArtwork, desktopDances, formatTime, isAd, islandDances, isSpotifyTab,
   musicPlaying, spotifyPosition, volumeLevel, withPlaying,
   parseLrc, findActiveLyric,
 } from "../src/core/spotify.ts";
@@ -359,4 +359,15 @@ test("the card has lyrics toggle button and preview element", () => {
   preview.fire("click");
   assert.equal(container.style.display, "", "container becomes visible on click");
 });
+
+test("isSpotifyTab identifies when the island is on the Spotify tab", () => {
+  assert.equal(isSpotifyTab({ mode: "expanded", view: "overview", focusId: SPOTIFY_ID }), true);
+  assert.equal(isSpotifyTab({ mode: "expanded", view: "overview", focusTaskId: SPOTIFY_ID }), true);
+  assert.equal(isSpotifyTab({ mode: "expanded", view: "overview", focusId: "integration_claude" }), false);
+  assert.equal(isSpotifyTab({ mode: "compact", view: "overview", focusId: SPOTIFY_ID }), false, "compact mode is not spotify tab");
+  assert.equal(isSpotifyTab({ mode: "expanded", view: "pomodoro", focusId: SPOTIFY_ID }), false, "pomodoro view is not spotify tab");
+  assert.equal(isSpotifyTab({ mode: "expanded", view: "todolist", focusId: SPOTIFY_ID }), false, "todolist view is not spotify tab");
+  assert.equal(isSpotifyTab({ mode: "expanded", view: "prompt", focusId: SPOTIFY_ID }), false, "chat view is not spotify tab");
+});
+
 

@@ -13,6 +13,7 @@ import { registerVoiceHandlers } from "./island/voice";
 import { applySpotify, registerSpotifyHandlers } from "./island/spotify";
 import { SPOTIFY_ID } from "./core/spotify";
 import { Recap } from "./recap/recap";
+import { ChatSessionsManager } from "./core/chat-sessions";
 import { onLanguageChange, resolveLanguage, setLanguage, systemLanguages } from "./i18n/i18n";
 
 /** Shows the language Settings asks for ("" = the system's, when Coucou has it). */
@@ -52,6 +53,9 @@ async function main() {
   // Rust shows the tray and its errors in the same language as the webview.
   void Bridge.setSystemLanguages(systemLanguages());
   island.applySettings();
+  try {
+    State.chatHistory = [...ChatSessionsManager.getActive().messages];
+  } catch {}
   State.loadIntegrationTasks();
   if (boot && !boot.cursorPoll) island.followPageCursor();
   await island.desktop.init();
